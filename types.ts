@@ -88,6 +88,20 @@ export interface LabOrder {
   resultComponents?: LabResultComponent[]; // For multi-parameter tests (e.g. CBC, Lipid Profile)
   resultNotes?: string;
   completedDate?: string;
+  // Radiology Specific
+  imageUrl?: string;
+  aiFindings?: AIAnnotation[];
+}
+
+export interface AIAnnotation {
+  id: string;
+  label: string;
+  confidence: number;
+  x: number; // Coordinate for bounding box
+  y: number;
+  width: number;
+  height: number;
+  description: string;
 }
 
 export interface Patient {
@@ -349,4 +363,74 @@ export interface StaffingImpactAnalysis {
   approvalRisk: 'Low' | 'Medium' | 'High';
   impactSummary: string;
   recommendation: string;
+}
+
+// --- INFRASTRUCTURE & TELE-ICU TYPES ---
+
+export interface BloodInventory {
+  id: string;
+  district: string;
+  hospitalId: string;
+  hospitalName: string;
+  bloodGroup: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
+  unitsAvailable: number;
+  lastUpdated: string;
+  status: 'Surplus' | 'Adequate' | 'Low' | 'Critical';
+}
+
+export interface TeleICUBed {
+  id: string;
+  hospitalId: string;
+  hospitalName: string;
+  district: string;
+  bedNumber: string;
+  patientId: string | null;
+  patientName: string | null;
+  vitals: {
+    hr: number;
+    spo2: number;
+    bpSys: number;
+    bpDia: number;
+    rr: number;
+  };
+  alerts: string[];
+  isConnected: boolean;
+}
+
+export interface InfrastructurePlan {
+  planSummary: string;
+  resourceAllocation: string[];
+  priorityAreas: string[];
+}
+
+// --- EMERGENCY RESPONSE (108) TYPES ---
+
+export interface Ambulance {
+  id: string;
+  vehicleNumber: string;
+  type: 'ALS' | 'BLS'; // Advanced/Basic Life Support
+  baseLocation: string; // District/Mandal
+  status: 'AVAILABLE' | 'DISPATCHED' | 'ON_SCENE' | 'OFF_DUTY';
+  currentLat: number;
+  currentLng: number;
+  assignedIncidentId?: string;
+}
+
+export interface EmergencyIncident {
+  id: string;
+  type: 'RTA' | 'Cardiac' | 'Pregnancy' | 'Trauma';
+  location: string; // Address text
+  district: string;
+  callerPhone: string;
+  severity: 'Critical' | 'High' | 'Medium';
+  reportedTime: string;
+  status: 'NEW' | 'ASSIGNED' | 'RESOLVED';
+  lat: number;
+  lng: number;
+}
+
+export interface DispatchPlan {
+  recommendedAmbulanceId: string;
+  estimatedEta: string;
+  routeSummary: string;
 }

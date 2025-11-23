@@ -24,7 +24,10 @@ import {
   BedDouble,
   Search,
   HeartPulse,
-  Briefcase
+  Briefcase,
+  Droplet,
+  MonitorPlay,
+  Radio
 } from 'lucide-react';
 import { DEMO_USERS } from '../../constants';
 
@@ -47,6 +50,18 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRole, onLogout, active
       label: 'Command Center', 
       icon: LayoutDashboard, 
       roles: [UserRole.SUPER_ADMIN, UserRole.HOSPITAL_ADMIN] 
+    },
+    {
+      id: 'emergency-command',
+      label: '108 Response Center',
+      icon: Radio,
+      roles: [UserRole.SUPER_ADMIN]
+    },
+    {
+      id: 'blood-bank',
+      label: 'Jeevandan Grid',
+      icon: Droplet,
+      roles: [UserRole.SUPER_ADMIN]
     },
     { 
       id: 'admin-hospitals', 
@@ -106,6 +121,12 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRole, onLogout, active
       icon: LayoutDashboard, 
       roles: [UserRole.DOCTOR]
     },
+    {
+      id: 'tele-icu',
+      label: 'e-ICU Command',
+      icon: MonitorPlay,
+      roles: [UserRole.DOCTOR]
+    },
     { 
       id: 'patients', 
       label: 'My OPD Queue', 
@@ -142,7 +163,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentRole, onLogout, active
     },
     { 
       id: 'lab', 
-      label: 'Laboratory', 
+      label: 'Laboratory & PACS', 
       icon: TestTube2, 
       roles: [UserRole.LAB_TECH, UserRole.DOCTOR] 
     },

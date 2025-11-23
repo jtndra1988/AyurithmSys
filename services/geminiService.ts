@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { Patient, AIAnalysisResult, RegistryEntry, AuditLog, Medication, DrugInteractionResult, LabReportAnalysis, StaffingImpactAnalysis } from "../types";
+import { Patient, AIAnalysisResult, RegistryEntry, AuditLog, Medication, DrugInteractionResult, LabReportAnalysis, StaffingImpactAnalysis, InfrastructurePlan, DispatchPlan, AIAnnotation } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -461,6 +461,40 @@ export const getStatewideResourcePlan = async (data: any): Promise<StatewideCris
   }
 };
 
+export const getInfrastructurePlan = async (data: any): Promise<InfrastructurePlan> => {
+  const prompt = `
+    You are the Strategic Planning AI for AP Health Infrastructure.
+    Current Status: ${JSON.stringify(data)}
+    
+    Advise on Blood Bank & Tele-ICU optimization.
+    
+    Return JSON:
+    1. planSummary: 2 sentences on network health.
+    2. resourceAllocation: Where to move blood units or deploy specialists.
+    3. priorityAreas: Districts needing immediate infrastructure upgrade.
+  `;
+
+  const schema: Schema = {
+    type: Type.OBJECT,
+    properties: {
+      planSummary: { type: Type.STRING },
+      resourceAllocation: { type: Type.ARRAY, items: { type: Type.STRING } },
+      priorityAreas: { type: Type.ARRAY, items: { type: Type.STRING } }
+    }
+  };
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { responseMimeType: "application/json", responseSchema: schema }
+    });
+    return JSON.parse(response.text || '{}') as InfrastructurePlan;
+  } catch (e) {
+    return { planSummary: "Analysis pending.", resourceAllocation: [], priorityAreas: [] };
+  }
+};
+
 export interface RegistryAnalysis {
   epidemicTrend: string;
   hotspotAlert: string;
@@ -869,5 +903,88 @@ export const getLabQualityAnalysis = async (labMetrics: any): Promise<LabQuality
     return JSON.parse(response.text || '{}') as LabQualityAnalysis;
   } catch (e) {
     return { tatScore: 88, efficiencyTrend: 'Stable', calibrationAlert: "None", staffingAdvice: "Routine operations." };
+  }
+};
+
+// --- 108 Ambulance AI ---
+
+export const getDispatchAdvice = async (incident: any, ambulances: any[]): Promise<DispatchPlan> => {
+  const prompt = `
+    You are the AI Dispatch Controller for the 108 Ambulance Service.
+    Incident: ${JSON.stringify(incident)}
+    Available Ambulances: ${JSON.stringify(ambulances)}
+    
+    Decide which ambulance to dispatch based on proximity (lat/lng) and capability (ALS/BLS).
+    
+    Return JSON:
+    1. recommendedAmbulanceId: ID of the best vehicle.
+    2. estimatedEta: e.g. "12 mins".
+    3. routeSummary: e.g. "Take NH-16 Northbound".
+  `;
+
+  const schema: Schema = {
+    type: Type.OBJECT,
+    properties: {
+      recommendedAmbulanceId: { type: Type.STRING },
+      estimatedEta: { type: Type.STRING },
+      routeSummary: { type: Type.STRING }
+    }
+  };
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { responseMimeType: "application/json", responseSchema: schema }
+    });
+    return JSON.parse(response.text || '{}') as DispatchPlan;
+  } catch (e) {
+    return { recommendedAmbulanceId: ambulances[0]?.id || '', estimatedEta: "15 mins", routeSummary: "Calculated by backup GPS." };
+  }
+};
+
+// --- Radiology AI ---
+
+export const analyzeRadiologyImage = async (imageUrl: string): Promise<AIAnnotation[]> => {
+  // Note: In a real scenario, we would send the image bytes. 
+  // For this simulation, we rely on the prompt context to "simulate" finding an issue on a generic X-ray description.
+  
+  const prompt = `
+    Simulate a Computer Vision analysis of a Chest X-Ray.
+    Detect detection of "Consolidation" or "Nodule".
+    
+    Return JSON array of bounding boxes:
+    [{ id, label, confidence, x, y, width, height, description }]
+    
+    (Coordinate system: 0-100 percentage)
+  `;
+
+  const schema: Schema = {
+    type: Type.ARRAY,
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        label: { type: Type.STRING },
+        confidence: { type: Type.NUMBER },
+        x: { type: Type.NUMBER },
+        y: { type: Type.NUMBER },
+        width: { type: Type.NUMBER },
+        height: { type: Type.NUMBER },
+        description: { type: Type.STRING }
+      }
+    }
+  };
+
+  try {
+    // In a real app, we'd pass the image here.
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { responseMimeType: "application/json", responseSchema: schema }
+    });
+    return JSON.parse(response.text || '[]') as AIAnnotation[];
+  } catch (e) {
+    return [];
   }
 };

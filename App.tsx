@@ -1,27 +1,30 @@
 
 import React, { useState } from 'react';
-import Layout from './components/Layout';
-import { Dashboard } from './components/Dashboard';
-import { PatientList } from './components/PatientList';
-import { PatientDetail } from './components/PatientDetail';
+import Layout from './components/shared/Layout';
+import { Dashboard } from './components/super_admin/Dashboard';
+import { PatientList } from './components/shared/PatientList';
+import { PatientDetail } from './components/shared/PatientDetail';
 import { FrontDesk } from './components/FrontDesk';
-import { Telemedicine } from './components/Telemedicine';
+import { Telemedicine } from './components/shared/Telemedicine';
 import { Pharmacy } from './components/Pharmacy';
 import { LabRadiology } from './components/LabRadiology';
-import { AdminHospital } from './components/AdminHospital';
-import { AdminRegistries } from './components/AdminRegistries';
-import { AdminAudit } from './components/AdminAudit';
-import { Login } from './components/Login';
+import { AdminHospital } from './components/super_admin/AdminHospital';
+import { AdminRegistries } from './components/super_admin/AdminRegistries';
+import { AdminAudit } from './components/super_admin/AdminAudit';
+import { Login } from './components/shared/Login';
 import { UserRole, Patient, RegistryEntry, AuditLog, PatientStatus, VisitType } from './types';
 import { MOCK_REGISTRY_DATA, MOCK_AUDIT_LOGS, DEMO_USERS, MOCK_PATIENTS } from './constants';
-import { GenomicsRegistry } from './components/GenomicsRegistry';
-import { HospitalCommandCenter } from './components/HospitalCommandCenter';
-import { Billing } from './components/Billing';
+import { GenomicsRegistry } from './components/super_admin/GenomicsRegistry';
+import { HospitalCommandCenter } from './components/hospital_admin/HospitalCommandCenter';
+import { Billing } from './components/hospital_admin/Billing';
 import { AssetManagement } from './components/AssetManagement';
 import { DoctorDashboard } from './components/DoctorDashboard';
 import { InpatientRounds } from './components/InpatientRounds';
 import { NurseDashboard } from './components/NurseDashboard';
 import { StaffManagement } from './components/StaffManagement';
+import { BloodBank } from './components/BloodBank';
+import { TeleICU } from './components/TeleICU';
+import { EmergencyCommand } from './components/super_admin/EmergencyCommand';
 
 function App() {
   // Start with no user logged in
@@ -235,6 +238,12 @@ function App() {
         return <Billing />;
       case 'assets':
         return <AssetManagement />;
+      case 'blood-bank':
+        return <BloodBank />;
+      case 'tele-icu':
+        return <TeleICU />;
+      case 'emergency-command':
+        return <EmergencyCommand />;
       default:
         return <div className="p-4 text-slate-500">Module Under Construction</div>;
     }

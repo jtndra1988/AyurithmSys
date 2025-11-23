@@ -1,5 +1,5 @@
 
-import { Patient, TriageLevel, InventoryItem, Hospital, UserRole, RegistryEntry, AuditLog, StaffMember, GenomicRegistryEntry, Invoice, InsuranceClaim, Asset, VisitType, PatientStatus, BillableItem, LabInventory, LabEquipment, Referral, LeaveRequest } from './types';
+import { Patient, TriageLevel, InventoryItem, Hospital, UserRole, RegistryEntry, AuditLog, StaffMember, GenomicRegistryEntry, Invoice, InsuranceClaim, Asset, VisitType, PatientStatus, BillableItem, LabInventory, LabEquipment, Referral, LeaveRequest, BloodInventory, TeleICUBed, Ambulance, EmergencyIncident, LabOrder } from './types';
 
 export const MOCK_HOSPITALS: Hospital[] = [
   { 
@@ -188,7 +188,8 @@ export const MOCK_LAB_TESTS = [
   "Blood Sugar PP", "Thyroid Profile (T3, T4, TSH)", "Dengue NS1 Antigen", 
   "Malaria Smear", "Widal Test", "Urine Routine", "Stool Routine", "Blood Culture",
   "CRP (C-Reactive Protein)", "ESR", "Troponin I", "CK-MB", "D-Dimer", "Ferritin",
-  "Procalcitonin", "ABG (Arterial Blood Gas)", "Electrolytes (Na, K, Cl)"
+  "Procalcitonin", "ABG (Arterial Blood Gas)", "Electrolytes (Na, K, Cl)", 
+  "X-Ray Chest PA", "CT Brain", "MRI Knee", "Ultrasound Abdomen"
 ];
 
 export const MOCK_PATIENTS: Patient[] = [
@@ -326,6 +327,16 @@ export const MOCK_PATIENTS: Patient[] = [
         orderedBy: 'Dr. V. Reddy', orderDate: '2023-10-20', 
         resultValue: '8.2', resultUnit: '%', resultFlag: 'HIGH', 
         completedDate: '2023-10-20' 
+      },
+      {
+        id: 'LO-RAD-001', testName: 'X-Ray Chest PA', priority: 'ROUTINE', status: 'COMPLETED',
+        orderedBy: 'Dr. V. Reddy', orderDate: '2023-10-20',
+        resultValue: 'Abnormal', resultUnit: '', resultFlag: 'HIGH',
+        completedDate: '2023-10-20', resultNotes: 'Hilar opacity seen.',
+        imageUrl: 'https://prod-images-static.radiopaedia.org/images/24909/0225f734c95365c7b0206833175259_jumbo.jpeg',
+        aiFindings: [
+          { id: 'anno-1', label: 'Opacity', confidence: 0.92, x: 60, y: 40, width: 20, height: 15, description: 'Suspected consolidation right upper lobe.' }
+        ]
       }
     ],
     medications: [],
@@ -719,4 +730,54 @@ export const MOCK_LEAVE_REQUESTS: LeaveRequest[] = [
     reason: 'Family Function',
     status: 'PENDING'
   }
+];
+
+export const MOCK_BLOOD_BANK: BloodInventory[] = [
+  { id: 'BB-001', district: 'Visakhapatnam', hospitalId: 'H-AP-001', hospitalName: 'KGH Blood Bank', bloodGroup: 'A+', unitsAvailable: 45, lastUpdated: 'Just now', status: 'Adequate' },
+  { id: 'BB-002', district: 'Visakhapatnam', hospitalId: 'H-AP-001', hospitalName: 'KGH Blood Bank', bloodGroup: 'O+', unitsAvailable: 12, lastUpdated: '1h ago', status: 'Low' },
+  { id: 'BB-003', district: 'Visakhapatnam', hospitalId: 'H-AP-001', hospitalName: 'KGH Blood Bank', bloodGroup: 'AB-', unitsAvailable: 2, lastUpdated: 'Just now', status: 'Critical' },
+  { id: 'BB-004', district: 'NTR District', hospitalId: 'H-AP-002', hospitalName: 'GGH Vijayawada', bloodGroup: 'O+', unitsAvailable: 50, lastUpdated: '2h ago', status: 'Surplus' },
+  { id: 'BB-005', district: 'NTR District', hospitalId: 'H-AP-002', hospitalName: 'GGH Vijayawada', bloodGroup: 'AB-', unitsAvailable: 15, lastUpdated: '1h ago', status: 'Adequate' },
+  { id: 'BB-006', district: 'Guntur', hospitalId: 'H-AP-004', hospitalName: 'GGH Guntur', bloodGroup: 'B+', unitsAvailable: 30, lastUpdated: '3h ago', status: 'Adequate' },
+  { id: 'BB-007', district: 'Alluri Sitharama Raju', hospitalId: 'H-AP-003', hospitalName: 'Tribal PHC Araku', bloodGroup: 'O+', unitsAvailable: 0, lastUpdated: 'Just now', status: 'Critical' },
+];
+
+export const MOCK_TELE_ICU: TeleICUBed[] = [
+  { 
+    id: 'TICU-001', hospitalId: 'H-AP-003', hospitalName: 'Araku PHC', district: 'ASR', bedNumber: 'ICU-01', 
+    patientId: 'P-AP-9901', patientName: 'R. Babu', 
+    vitals: { hr: 110, spo2: 88, bpSys: 90, bpDia: 60, rr: 24 }, 
+    alerts: ['Hypoxia', 'Tachycardia'], isConnected: true 
+  },
+  { 
+    id: 'TICU-002', hospitalId: 'H-AP-003', hospitalName: 'Araku PHC', district: 'ASR', bedNumber: 'ICU-02', 
+    patientId: 'P-AP-9902', patientName: 'S. Kumari', 
+    vitals: { hr: 72, spo2: 98, bpSys: 120, bpDia: 80, rr: 16 }, 
+    alerts: [], isConnected: true 
+  },
+  { 
+    id: 'TICU-003', hospitalId: 'H-AP-005', hospitalName: 'CHC Paderu', district: 'ASR', bedNumber: 'ICU-01', 
+    patientId: 'P-AP-9903', patientName: 'K. Dora', 
+    vitals: { hr: 45, spo2: 95, bpSys: 100, bpDia: 60, rr: 14 }, 
+    alerts: ['Bradycardia'], isConnected: true 
+  },
+  { 
+    id: 'TICU-004', hospitalId: 'H-AP-006', hospitalName: 'CHC Srikakulam', district: 'Srikakulam', bedNumber: 'ICU-04', 
+    patientId: null, patientName: null, 
+    vitals: { hr: 0, spo2: 0, bpSys: 0, bpDia: 0, rr: 0 }, 
+    alerts: [], isConnected: false 
+  },
+];
+
+export const MOCK_AMBULANCES: Ambulance[] = [
+  { id: 'AMB-108-001', vehicleNumber: 'AP 31 G 1008', type: 'ALS', baseLocation: 'Visakhapatnam Urban', status: 'AVAILABLE', currentLat: 17.72, currentLng: 83.30 },
+  { id: 'AMB-108-002', vehicleNumber: 'AP 31 G 1009', type: 'BLS', baseLocation: 'Anakapalli', status: 'DISPATCHED', currentLat: 17.68, currentLng: 83.02, assignedIncidentId: 'INC-001' },
+  { id: 'AMB-108-003', vehicleNumber: 'AP 37 G 2020', type: 'ALS', baseLocation: 'Araku Valley', status: 'AVAILABLE', currentLat: 18.32, currentLng: 82.87 },
+  { id: 'AMB-108-004', vehicleNumber: 'AP 16 G 5500', type: 'BLS', baseLocation: 'Vijayawada Highway', status: 'ON_SCENE', currentLat: 16.50, currentLng: 80.64, assignedIncidentId: 'INC-002' },
+];
+
+export const MOCK_INCIDENTS: EmergencyIncident[] = [
+  { id: 'INC-001', type: 'RTA', location: 'NH-16 Near Anakapalli', district: 'Visakhapatnam', callerPhone: '98xxxx9812', severity: 'Critical', reportedTime: '10:15 AM', status: 'ASSIGNED', lat: 17.69, lng: 83.05 },
+  { id: 'INC-002', type: 'Cardiac', location: 'Benz Circle, Vijayawada', district: 'NTR', callerPhone: '88xxxx1122', severity: 'High', reportedTime: '10:30 AM', status: 'ASSIGNED', lat: 16.51, lng: 80.65 },
+  { id: 'INC-003', type: 'Pregnancy', location: 'Paderu Village', district: 'ASR', callerPhone: '99xxxx3311', severity: 'Medium', reportedTime: '10:45 AM', status: 'NEW', lat: 18.08, lng: 82.66 },
 ];
