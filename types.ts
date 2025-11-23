@@ -89,13 +89,35 @@ export interface InventoryItem {
 }
 
 // Admin Types
+export interface HospitalBedConfig {
+  general: number;
+  icu: number;
+  hdu: number;
+  emergency: number;
+  maternity: number;
+}
+
 export interface Hospital {
   id: string;
   name: string;
-  type: 'District Hospital' | 'PHC' | 'CHC' | 'Medical College';
+  type: 'District Hospital' | 'PHC' | 'CHC' | 'Medical College' | 'Specialized Center';
   district: string;
-  bedCapacity: number;
+  state: string;
+  address: string;
+  bedCapacity: number; // Total derived from bedConfig
   activePatients: number;
+  
+  // Detailed Configuration per BRD
+  bedConfig: HospitalBedConfig;
+  departments: string[]; // e.g. Cardiology, Ortho
+  facilities: string[]; // e.g. Blood Bank, MRI, Telemedicine Node
+  
+  // Admin & Compliance
+  rohiniId?: string; // Registry of Hospitals in Network of Insurance
+  abdmId?: string;
+  contactEmail: string;
+  contactPhone: string;
+  medicalSuperintendent: string;
 }
 
 export interface StaffMember {
@@ -117,10 +139,18 @@ export interface RegistryEntry {
   id: string;
   patientId: string;
   patientName: string;
-  type: 'TB' | 'Cancer' | 'HIV' | 'Maternal';
-  status: 'SUBMITTED' | 'PENDING' | 'FLAGGED';
+  patientAge: number;
+  patientGender: string;
+  type: 'TB' | 'Cancer' | 'HIV' | 'Maternal' | 'Vector Borne';
+  status: 'SUBMITTED' | 'PENDING' | 'FLAGGED' | 'REJECTED';
   submissionDate: string;
   hospitalId: string;
+  hospitalName: string;
+  diagnosis: string;
+  icdCode: string;
+  state: string;
+  district: string;
+  riskScore?: string; // AI Derived risk
 }
 
 // Audit Types (Super Admin)
