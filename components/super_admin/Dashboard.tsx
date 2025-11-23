@@ -2,8 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Activity, Users, AlertTriangle, BedDouble, Map, Globe, BrainCircuit, FileText, CheckCircle2, Ambulance, Network } from 'lucide-react';
-import { getExecutiveBriefing, getStatewideResourcePlan, ExecutiveBriefing, StatewideCrisisPlan } from '../services/geminiService';
-import { MOCK_REFERRALS } from '../constants';
+import { getExecutiveBriefing, getStatewideResourcePlan, ExecutiveBriefing, StatewideCrisisPlan } from '../../services/geminiService';
+import { MOCK_REFERRALS } from '../../constants';
 
 const data = [
   { name: 'Visakhapatnam', admissions: 145, discharges: 130 },

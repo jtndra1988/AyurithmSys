@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Patient, TriageLevel, VisitType, PatientStatus } from '../types';
+import { Patient, TriageLevel, VisitType, PatientStatus } from '../../types';
 import { Search, Filter, ChevronRight, Users, BedDouble, AlertCircle, Clock, BrainCircuit, RefreshCw, AlertTriangle, TrendingUp } from 'lucide-react';
-import { getQueueAnalysis, QueueAnalysis } from '../services/geminiService';
+import { getQueueAnalysis, QueueAnalysis } from '../../services/geminiService';
 
 interface PatientListProps {
   patients: Patient[];

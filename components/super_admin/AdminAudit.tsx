@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
-import { AuditLog } from '../types';
-import { getAuditAnalysis, SecurityAnalysis } from '../services/geminiService';
+import { AuditLog } from '../../types';
+import { getAuditAnalysis, SecurityAnalysis } from '../../services/geminiService';
 import { ShieldCheck, Eye, Search, Filter, Lock, Download, AlertTriangle, BrainCircuit } from 'lucide-react';
 
 interface AdminAuditProps {

@@ -1,13 +1,13 @@
 
 import React, { useState } from 'react';
-import { Patient, AIAnalysisResult, TriageLevel, GenomicMarker, RegistryEntry, VisitType, PatientStatus, Medication, LabOrder, UserRole, DrugInteractionResult, Vitals, Referral } from '../types';
-import { getClinicalAssessment, checkDrugInteractions, analyzeVitalsRisk, VitalsAnalysis } from '../services/geminiService';
+import { Patient, AIAnalysisResult, TriageLevel, GenomicMarker, RegistryEntry, VisitType, PatientStatus, Medication, LabOrder, UserRole, DrugInteractionResult, Vitals, Referral } from '../../types';
+import { getClinicalAssessment, checkDrugInteractions, analyzeVitalsRisk, VitalsAnalysis } from '../../services/geminiService';
 import { 
   Heart, Thermometer, Activity, Wind, Dna, BrainCircuit, AlertCircle, CheckCircle2, X, Plus, Save, Trash2, 
   AlertTriangle, RefreshCw, Beaker, FileText, ClipboardEdit, UploadCloud, ChevronRight, BedDouble, LogOut,
   Pill, TestTube2, Search, ChevronDown, ShieldAlert, Stethoscope, Clock, Syringe, Ambulance
 } from 'lucide-react';
-import { MOCK_MEDICINES, MOCK_LAB_TESTS, MOCK_HOSPITALS } from '../constants';
+import { MOCK_MEDICINES, MOCK_LAB_TESTS, MOCK_HOSPITALS } from '../../constants';
 
 interface PatientDetailProps {
   patient: Patient;

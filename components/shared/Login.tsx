@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { UserRole } from '../types';
-import { DEMO_USERS } from '../constants';
+import { UserRole } from '../../types';
+import { DEMO_USERS } from '../../constants';
 import { Activity, ShieldCheck, Building2 } from 'lucide-react';
 
 interface LoginProps {

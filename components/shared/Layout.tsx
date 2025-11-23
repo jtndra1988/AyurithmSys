@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { UserRole } from '../types';
+import { UserRole } from '../../types';
 import { 
   Activity, 
   LayoutDashboard, 
@@ -26,7 +26,7 @@ import {
   HeartPulse,
   Briefcase
 } from 'lucide-react';
-import { DEMO_USERS } from '../constants';
+import { DEMO_USERS } from '../../constants';
 
 interface LayoutProps {
   children: React.ReactNode;

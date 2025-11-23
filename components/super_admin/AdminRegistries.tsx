@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
-import { REGISTRY_TRENDS } from '../constants';
-import { RegistryEntry } from '../types';
-import { getRegistryAnalysis, RegistryAnalysis } from '../services/geminiService';
+import { REGISTRY_TRENDS } from '../../constants';
+import { RegistryEntry } from '../../types';
+import { getRegistryAnalysis, RegistryAnalysis } from '../../services/geminiService';
 import { 
   FileText, CheckCircle, Clock, AlertOctagon, Download, UploadCloud, 
   Search, Check, FileWarning, BarChart2, Map, Trash2, X, BrainCircuit, Activity

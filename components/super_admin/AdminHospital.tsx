@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { MOCK_HOSPITALS, MOCK_STAFF } from '../constants';
-import { Hospital, StaffMember, UserRole } from '../types';
+import { MOCK_HOSPITALS, MOCK_STAFF } from '../../constants';
+import { Hospital, StaffMember, UserRole } from '../../types';
 import { 
   Building2, 
   Activity, 

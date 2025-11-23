@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { MOCK_PATIENTS } from '../constants';
-import { Patient } from '../types';
+import { MOCK_PATIENTS } from '../../constants';
+import { Patient } from '../../types';
 import { 
   Video, Mic, MicOff, VideoOff, PhoneOff, MessageSquare, FileText, Phone, Loader2, 
   Calendar, Clock, User, ChevronRight, History, AlertCircle, FileClock, ArrowLeft, CheckCircle2
 } from 'lucide-react';
-import { getTelemedicineSummary } from '../services/geminiService';
+import { getTelemedicineSummary } from '../../services/geminiService';
 
 // Mock Schedule linked to existing patients
 const APPOINTMENT_QUEUE = [
@@ -408,4 +408,3 @@ export const Telemedicine: React.FC = () => {
     </div>
   );
 };
-    
