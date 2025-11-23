@@ -195,4 +195,16 @@ export const HospitalCommandCenter: React.FC = () => {
                      <p className="text-xs text-amber-600">General Medicine queue > 45 mins.</p>
                   </div>
                </div>
-               <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg flex gap-
+               <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg flex gap-3">
+                  <CalendarCheck className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                  <div>
+                     <h4 className="text-sm font-bold text-blue-800">Staff Rostering</h4>
+                     <p className="text-xs text-blue-600">Night shift schedule pending approval.</p>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </div>
+    </div>
+  );
+};
