@@ -1,0 +1,8 @@
+{
+  "name": "HMS+ AI-Driven Hospital OS",
+  "description": "A centralized, AI-driven Hospital Management System supporting multi-hospital operations, telemedicine, and genomics-based decision support.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
