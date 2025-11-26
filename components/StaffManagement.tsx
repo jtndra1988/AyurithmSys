@@ -5,7 +5,8 @@ import { StaffMember, UserRole, LeaveRequest, StaffingImpactAnalysis } from '../
 import { analyzeStaffingImpact } from '../services/geminiService';
 import { 
   Users, CheckCircle2, XCircle, Calendar, Clock, Stethoscope, 
-  BrainCircuit, RefreshCw, AlertTriangle, Search, Filter, Briefcase
+  BrainCircuit, RefreshCw, AlertTriangle, Search, Filter, Briefcase,
+  Plus, X, Save, MapPin
 } from 'lucide-react';
 
 export const StaffManagement: React.FC = () => {
@@ -18,6 +19,15 @@ export const StaffManagement: React.FC = () => {
   // AI Analysis State
   const [analyzingLeave, setAnalyzingLeave] = useState<string | null>(null);
   const [impactAnalysis, setImpactAnalysis] = useState<Record<string, StaffingImpactAnalysis>>({});
+
+  // Roster / Shift State
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [newShift, setNewShift] = useState({
+    staffId: '',
+    shiftType: 'Morning (08:00 - 14:00)',
+    date: new Date().toISOString().split('T')[0],
+    ward: 'General Ward A'
+  });
 
   // Roster filtering
   const filteredStaff = staffMembers.filter(s => filterRole === 'ALL' || s.role === filterRole);
@@ -43,6 +53,21 @@ export const StaffManagement: React.FC = () => {
     const analysis = await analyzeStaffingImpact(request, rosterContext);
     setImpactAnalysis(prev => ({ ...prev, [request.id]: analysis }));
     setAnalyzingLeave(null);
+  };
+
+  const handleAssignShift = () => {
+    if (newShift.staffId) {
+      const staffName = staffMembers.find(s => s.id === newShift.staffId)?.name;
+      alert(`Shift Assigned Successfully:\n${staffName}\n${newShift.shiftType}\n${newShift.ward}`);
+      setIsShiftModalOpen(false);
+      // Reset
+      setNewShift({
+        staffId: '',
+        shiftType: 'Morning (08:00 - 14:00)',
+        date: new Date().toISOString().split('T')[0],
+        ward: 'General Ward A'
+      });
+    }
   };
 
   const renderRoster = () => (
@@ -94,6 +119,12 @@ export const StaffManagement: React.FC = () => {
                    <option value={UserRole.NURSE}>Nurses</option>
                    <option value={UserRole.PHARMACIST}>Pharmacists</option>
                 </select>
+                <button 
+                   onClick={() => setIsShiftModalOpen(true)}
+                   className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 flex items-center gap-2 transition-colors"
+                >
+                   <Plus className="h-4 w-4" /> Assign Shift
+                </button>
              </div>
           </div>
           <table className="w-full text-left">
@@ -103,7 +134,7 @@ export const StaffManagement: React.FC = () => {
                    <th className="px-6 py-4">Role / Dept</th>
                    <th className="px-6 py-4">Availability</th>
                    <th className="px-6 py-4">Contact</th>
-                   <th className="px-6 py-4 text-right">Shift</th>
+                   <th className="px-6 py-4 text-right">Current Shift</th>
                 </tr>
              </thead>
              <tbody className="divide-y divide-slate-100">
@@ -138,7 +169,7 @@ export const StaffManagement: React.FC = () => {
                          {staff.contact}
                       </td>
                       <td className="px-6 py-4 text-right">
-                         <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                         <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200">
                             09:00 - 17:00
                          </span>
                       </td>
@@ -147,6 +178,94 @@ export const StaffManagement: React.FC = () => {
              </tbody>
           </table>
        </div>
+
+       {/* Assign Shift Modal */}
+       {isShiftModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+                <div className="bg-slate-900 p-4 text-white flex justify-between items-center">
+                   <h3 className="font-bold flex items-center gap-2">
+                      <Calendar className="h-5 w-5" /> Assign Roster Shift
+                   </h3>
+                   <button onClick={() => setIsShiftModalOpen(false)} className="text-slate-400 hover:text-white">
+                      <X className="h-5 w-5" />
+                   </button>
+                </div>
+                <div className="p-6 space-y-4">
+                   <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Staff Member</label>
+                      <select 
+                         className="w-full p-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                         value={newShift.staffId}
+                         onChange={e => setNewShift({...newShift, staffId: e.target.value})}
+                      >
+                         <option value="">-- Select Staff --</option>
+                         {staffMembers.map(s => (
+                            <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                         ))}
+                      </select>
+                   </div>
+                   
+                   <div className="grid grid-cols-2 gap-4">
+                      <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Shift Type</label>
+                         <select 
+                            className="w-full p-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={newShift.shiftType}
+                            onChange={e => setNewShift({...newShift, shiftType: e.target.value})}
+                         >
+                            <option value="Morning (08:00 - 14:00)">Morning</option>
+                            <option value="Evening (14:00 - 20:00)">Evening</option>
+                            <option value="Night (20:00 - 08:00)">Night</option>
+                            <option value="General (09:00 - 17:00)">General</option>
+                         </select>
+                      </div>
+                      <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+                         <input 
+                            type="date" 
+                            className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={newShift.date}
+                            onChange={e => setNewShift({...newShift, date: e.target.value})}
+                         />
+                      </div>
+                   </div>
+
+                   <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Location / Ward</label>
+                      <div className="relative">
+                         <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                         <select 
+                            className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={newShift.ward}
+                            onChange={e => setNewShift({...newShift, ward: e.target.value})}
+                         >
+                            <option>General Ward A</option>
+                            <option>General Ward B</option>
+                            <option>ICU - Medical</option>
+                            <option>ICU - Surgical</option>
+                            <option>Emergency / Casualty</option>
+                            <option>OPD Clinic</option>
+                            <option>Pharmacy</option>
+                            <option>Laboratory</option>
+                         </select>
+                      </div>
+                   </div>
+
+                   <div className="pt-4 flex gap-3">
+                      <button onClick={() => setIsShiftModalOpen(false)} className="flex-1 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
+                      <button 
+                         onClick={handleAssignShift}
+                         disabled={!newShift.staffId}
+                         className="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-sm disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                      >
+                         <Save className="h-4 w-4" /> Save Roster
+                      </button>
+                   </div>
+                </div>
+             </div>
+          </div>
+       )}
     </div>
   );
 
