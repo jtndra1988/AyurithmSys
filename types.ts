@@ -434,3 +434,94 @@ export interface DispatchPlan {
   estimatedEta: string;
   routeSummary: string;
 }
+
+// --- AI SERVICE TYPES ---
+
+export interface VitalsAnalysis {
+  riskScore: number;
+  riskLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  alertMessage: string;
+  clinicalAction: string;
+}
+
+export interface ExecutiveBriefing {
+  situationReport: string;
+  criticalAlerts: string[];
+  recommendedActions: string[];
+}
+
+export interface StatewideCrisisPlan {
+  threatAssessment: string;
+  resourceAllocations: string[];
+  policyOrderDraft: string;
+}
+
+export interface HospitalOpsAnalysis {
+  efficiencyScore: number;
+  bottleneckAlert: string;
+  staffingRecommendation: string;
+}
+
+export interface RevenueInsight {
+  trend: string;
+  insight: string;
+  actionableTip: string;
+}
+
+export interface QueueAnalysis {
+  efficiencyScore: number;
+  criticalAlerts: string[];
+  reorderingSuggestions: string[];
+  resourceAdvice: string;
+}
+
+export interface InventoryInsight {
+  stockoutRisk: string[];
+  procurementAdvice: string;
+}
+
+export interface DoctorBriefing {
+  priorities: string[];
+  riskAlerts: string[];
+  scheduleOptimization: string;
+}
+
+export interface NurseHandover {
+  shiftSummary: string;
+  criticalPatients: string[];
+  pendingTasks: string[];
+}
+
+export interface GenomicPolicyInsight {
+  policyRecommendation: string;
+  procurementAdvice: string;
+}
+
+export interface SecurityAnalysis {
+  threatLevel: string;
+  summary: string;
+}
+
+export interface AssetPrediction {
+  riskLevel: string;
+  predictedFailures: string[];
+  maintenanceAdvice: string;
+}
+
+export interface DischargeReadiness {
+  score: number;
+  status: string;
+  missingCriteria: string[];
+  estimatedDischargeDate: string;
+}
+
+export interface LabQualityAnalysis {
+  defectRate: number;
+  calibrationAlerts: string[];
+}
+
+export interface RegistryAnalysis {
+  epidemicTrend: string;
+  hotspotAlert: string;
+  publicHealthIntervention: string;
+}
