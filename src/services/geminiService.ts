@@ -71,7 +71,7 @@ export const getClinicalAssessment = async (patient: Patient, clinicalNotes?: st
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -137,7 +137,7 @@ export const getLabReportAnalysis = async (
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -181,7 +181,7 @@ export const checkDrugInteractions = async (prescriptions: Medication[], history
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -203,7 +203,7 @@ export const getDrugInfo = async (query: string): Promise<string> => {
   
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
     });
     return response.text || "No information available.";
@@ -217,7 +217,7 @@ export const getTelemedicineSummary = async (transcript: string): Promise<string
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: `Summarize this medical consultation transcript into a professional clinical note (SOAP format):\n\n${transcript}`,
     });
     return response.text || "Could not generate summary.";
@@ -269,7 +269,7 @@ export const getDoctorDailyBriefing = async (doctorName: string, opdList: Patien
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -316,7 +316,7 @@ export const getDischargeReadiness = async (patient: Patient): Promise<Discharge
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -364,7 +364,7 @@ export const analyzeVitalsRisk = async (vitals: any, age: number): Promise<Vital
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -413,7 +413,7 @@ export const getNurseShiftHandover = async (patients: Patient[]): Promise<NurseH
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -466,7 +466,7 @@ export const getExecutiveBriefing = async (metrics: any): Promise<ExecutiveBrief
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -515,7 +515,7 @@ export const getStatewideResourcePlan = async (data: any): Promise<StatewideCris
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -555,7 +555,7 @@ export const getInfrastructurePlan = async (data: any): Promise<InfrastructurePl
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -602,7 +602,7 @@ export const getRegistryAnalysis = async (data: RegistryEntry[]): Promise<Regist
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -643,7 +643,7 @@ export const getGenomicInsights = async (riskCounts: any): Promise<GenomicPolicy
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -685,7 +685,7 @@ export const getAuditAnalysis = async (logs: AuditLog[]): Promise<SecurityAnalys
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -727,7 +727,7 @@ export const getHospitalOperationsAnalysis = async (metrics: any): Promise<Hospi
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -764,7 +764,7 @@ export const analyzeStaffingImpact = async (request: any, currentRoster: string)
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -804,7 +804,7 @@ export const getRevenueAnalysis = async (revenueData: any): Promise<RevenueInsig
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -844,7 +844,7 @@ export const getAssetMaintenancePrediction = async (assets: any): Promise<AssetP
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -881,7 +881,7 @@ export const getInventoryOptimization = async (inventory: any): Promise<Inventor
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -936,7 +936,7 @@ export const getQueueAnalysis = async (patients: Patient[]): Promise<QueueAnalys
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -986,7 +986,7 @@ export const getLabQualityAnalysis = async (labMetrics: any): Promise<LabQuality
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -1025,7 +1025,7 @@ export const getDispatchAdvice = async (incident: any, ambulances: any[]): Promi
 
   try {
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
@@ -1073,7 +1073,7 @@ export const analyzeRadiologyImage = async (imageUrl: string): Promise<AIAnnotat
   try {
     // In a real app, we'd pass the image here.
     const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: prompt,
       config: { responseMimeType: "application/json", responseSchema: schema }
     });
