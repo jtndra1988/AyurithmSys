@@ -6,7 +6,7 @@ let ai: GoogleGenAI | null = null;
 
 try {
   // FIX: Use import.meta.env for Vite instead of process.env
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const apiKey = "AIzaSyC6InbK5UJ7jTry9VPE9hu1KAt63UbhfE8";
   
   if (apiKey) {
     ai = new GoogleGenAI({ apiKey });
