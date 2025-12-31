@@ -61,6 +61,8 @@ function App() {
 
     setAuditLogs(prev => [newLog, ...prev]);
   };
+console.log("[env-check] keys:", Object.keys(import.meta.env).filter(k => k.startsWith("VITE_")));
+console.log("[env-check] gemini key present:", !!import.meta.env.VITE_GEMINI_API_KEY);
 
   const handleLogin = (role: UserRole) => {
     setCurrentRole(role);

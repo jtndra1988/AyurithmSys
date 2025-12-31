@@ -1,898 +1,1026 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { Patient, AIAnalysisResult, RegistryEntry, AuditLog, Medication, DrugInteractionResult, LabReportAnalysis, StaffingImpactAnalysis, InfrastructurePlan, DispatchPlan, AIAnnotation } from "../types";
+import { withGemini, GEMINI_MODEL } from "./geminiKeyring";
 
-// Safe initialization of the AI client to prevent white-screen crashes if env is missing
-let ai: GoogleGenAI | null = null;
+// Import your app types (keep as-is if you already had these)
+import type {
+  Patient,
+  AIAnalysisResult,
+  RegistryEntry,
+  AuditLog,
+  Medication,
+  DrugInteractionResult,
+  LabReportAnalysis,
+  StaffingImpactAnalysis,
+  InfrastructurePlan,
+  DispatchPlan,
+  AIAnnotation,
+} from "../types";
 
-try {
-  // FIX: Use import.meta.env for Vite instead of process.env
-  const apiKey = "AIzaSyC6InbK5UJ7jTry9VPE9hu1KAt63UbhfE8";
-  
-  if (apiKey) {
-    ai = new GoogleGenAI({ apiKey });
-  } else {
-    console.warn("HMS+ Warning: VITE_GEMINI_API_KEY is not set in .env file. AI features will operate in fallback mode.");
+/* -------------------------------------------------------
+   Small utilities
+------------------------------------------------------- */
+
+type JsonSchema = Record<string, any>;
+
+function getTextFromGeminiResult(res: any): string {
+  // Support multiple SDK response shapes (different Gemini SDK versions)
+  try {
+    if (typeof res?.text === "function") return String(res.text() ?? "");
+    if (typeof res?.text === "string") return res.text;
+    if (typeof res?.response?.text === "function") return String(res.response.text() ?? "");
+    if (typeof res?.response?.text === "string") return res.response.text;
+
+    const parts = res?.candidates?.[0]?.content?.parts;
+    if (Array.isArray(parts)) {
+      return parts.map((p: any) => p?.text).filter(Boolean).join("\n");
+    }
+  } catch {
+    // ignore
   }
-} catch (e) {
-  console.warn("HMS+ Warning: Could not access environment variables. AI features disabled.");
+  return "";
 }
-// Helper to safely check if AI is available
-const isAiAvailable = (): boolean => {
-  return !!ai;
-};
+
+function extractLikelyJson(s: string): string {
+  const t = (s || "").trim();
+  if (!t) return "{}";
+
+  if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+    return t;
+  }
+
+  const o1 = t.indexOf("{");
+  const o2 = t.lastIndexOf("}");
+  if (o1 !== -1 && o2 !== -1 && o2 > o1) return t.slice(o1, o2 + 1);
+
+  const a1 = t.indexOf("[");
+  const a2 = t.lastIndexOf("]");
+  if (a1 !== -1 && a2 !== -1 && a2 > a1) return t.slice(a1, a2 + 1);
+
+  return t; // will throw in JSON.parse if not JSON
+}
+
+function safeJsonParse<T>(raw: string, fallback: T): T {
+  try {
+    const j = JSON.parse(extractLikelyJson(raw));
+    return j as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function generateText(prompt: string, systemInstruction?: string): Promise<string> {
+  const requestKey = `text:${GEMINI_MODEL}:${systemInstruction ? "sys" : "nosys"}:${prompt.slice(0, 600)}`;
+
+  const res = await withGemini(
+    requestKey,
+    (client) =>
+      client.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: prompt,
+        config: systemInstruction ? ({ systemInstruction } as any) : undefined,
+      } as any),
+    { maxAttempts: 3 }
+  );
+
+  return getTextFromGeminiResult(res).trim();
+}
+
+
+async function generateJson<T>(
+  prompt: string,
+  schema?: JsonSchema,
+  systemInstruction?: string,
+  fallback?: T
+): Promise<T> {
+  const requestKey = `json:${GEMINI_MODEL}:${systemInstruction ? "sys" : "nosys"}:${
+    schema ? "schema" : "noschema"
+  }:${prompt.slice(0, 600)}`;
+
+  const res = await withGemini(
+    requestKey,
+    (client) =>
+      client.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: prompt,
+        config: {
+          ...(systemInstruction ? { systemInstruction } : {}),
+          responseMimeType: "application/json",
+          ...(schema ? { responseSchema: schema } : {}),
+        } as any,
+      } as any),
+    { maxAttempts: 3 }
+  );
+
+  const raw = getTextFromGeminiResult(res);
+  return safeJsonParse<T>(raw, fallback as T);
+}
+
+
+/* -------------------------------------------------------
+   Exported APIs (keep names stable for your UI)
+------------------------------------------------------- */
 
 // --- Clinical AI ---
-
-export const getClinicalAssessment = async (patient: Patient, clinicalNotes?: string): Promise<AIAnalysisResult> => {
-  if (!isAiAvailable()) {
-    return {
-      summary: "AI Analysis Unavailable (Missing API Key). Simulated assessment: Patient shows signs of stability but requires monitoring.",
-      differentialDiagnosis: ["Simulated Diagnosis A", "Simulated Diagnosis B"],
-      recommendedLabs: ["CBC", "Electrolytes"],
-      treatmentPlan: "Continue current management. Review vitals q4h.",
-      riskAssessment: "Moderate (Simulated)"
-    };
-  }
-
+export async function getClinicalAssessment(
+  patient: Patient,
+  clinicalNotes?: string
+): Promise<AIAnalysisResult> {
   const prompt = `
-    You are an expert Medical AI Assistant for the HMS+ platform (Government of India).
-    Analyze the following patient case strictly based on the data provided.
-    
-    Patient: ${patient.name}, ${patient.age}y ${patient.gender}
-    Symptoms: ${patient.symptoms.join(', ')}
-    Vitals: HR ${patient.vitals.heartRate}, BP ${patient.vitals.bpSystolic}/${patient.vitals.bpDiastolic}, Temp ${patient.vitals.temperature}C, SpO2 ${patient.vitals.spO2}%
-    Medical History: ${patient.history}
-    Lab Flags: ${patient.labResults.filter(l => l.flag !== 'NORMAL').map(l => `${l.testName}: ${l.value} (${l.flag})`).join(', ')}
-    Genomics: ${patient.genomics ? patient.genomics.map(g => `${g.gene} ${g.variant} (${g.significance})`).join(', ') : 'None available'}
-    Clinical Notes from Doctor: ${clinicalNotes || 'None provided'}
+You are an expert Medical AI Assistant for HMS+.
+Analyze ONLY provided data. Be cautious and clinician-verifiable.
 
-    Provide a clinical assessment in structured JSON format.
-  `;
+Return ONLY JSON with keys:
+{
+  "summary": string,
+  "differentialDiagnosis": string[],
+  "recommendedLabs": string[],
+  "treatmentPlan": string,
+  "riskAssessment": string
+}
 
-  const assessmentSchema: Schema = {
-    type: Type.OBJECT,
+Patient:
+${JSON.stringify({ patient, clinicalNotes: clinicalNotes || "" }, null, 2)}
+`;
+
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      summary: { type: Type.STRING, description: "A concise 2-sentence clinical summary." },
-      differentialDiagnosis: { 
-        type: Type.ARRAY, 
-        items: { type: Type.STRING },
-        description: "List of top 3 potential diagnoses." 
-      },
-      recommendedLabs: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
-        description: "List of recommended next investigations."
-      },
-      treatmentPlan: { type: Type.STRING, description: "Immediate management suggestions." },
-      riskAssessment: { type: Type.STRING, description: "Assessment of deterioration risk (Low/Medium/High) with reason." }
+      summary: { type: "string" },
+      differentialDiagnosis: { type: "array", items: { type: "string" } },
+      recommendedLabs: { type: "array", items: { type: "string" } },
+      treatmentPlan: { type: "string" },
+      riskAssessment: { type: "string" },
     },
-    required: ["summary", "differentialDiagnosis", "recommendedLabs", "treatmentPlan", "riskAssessment"]
+    required: ["summary", "differentialDiagnosis", "recommendedLabs", "treatmentPlan", "riskAssessment"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: assessmentSchema,
-        systemInstruction: "You are a helpful, ethical, and cautious medical AI assistant. Always advise doctor verification."
-      }
-    });
+  const fallback: AIAnalysisResult = {
+    summary:
+      "AI Analysis Unavailable (Missing API Key). Simulated assessment: Patient shows signs of stability but requires monitoring.",
+    differentialDiagnosis: [],
+    recommendedLabs: [],
+    treatmentPlan: "Follow standard protocol and monitor vitals.",
+    riskAssessment: "Unknown",
+  };
 
-    const text = response.text;
-    if (!text) throw new Error("No response from AI");
-    
-    return JSON.parse(text) as AIAnalysisResult;
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    return {
-      summary: "AI Service temporarily unavailable. Please rely on clinical judgment.",
-      differentialDiagnosis: [],
-      recommendedLabs: [],
-      treatmentPlan: "Consult standard protocols.",
-      riskAssessment: "Unknown"
-    };
-  }
-};
+  const out = await generateJson<AIAnalysisResult>(prompt, schema, undefined, fallback);
 
-export const getLabReportAnalysis = async (
-  testName: string, 
-  results: any, // Can be string value or array of components
-  unit: string, 
-  patientAge: number, 
+  // UI safety hardening
+  return {
+    summary: out?.summary ?? fallback.summary,
+    differentialDiagnosis: out?.differentialDiagnosis ?? [],
+    recommendedLabs: out?.recommendedLabs ?? [],
+    treatmentPlan: out?.treatmentPlan ?? fallback.treatmentPlan,
+    riskAssessment: out?.riskAssessment ?? fallback.riskAssessment,
+  };
+}
+
+export async function getLabReportAnalysis(
+  testName: string,
+  results: any,
+  unit: string,
+  patientAge: number,
   patientGender: string
-): Promise<LabReportAnalysis> => {
-  if (!isAiAvailable()) {
-    return { 
-      clinicalInterpretation: "AI unavailable. Value requires clinical correlation.", 
-      referenceRangeComment: "Check standard lab ranges.", 
-      severityAssessment: "Abnormal", 
-      suggestedAction: "Manual review required." 
-    };
-  }
-
+): Promise<LabReportAnalysis> {
   const prompt = `
-    You are an expert Pathologist AI. Analyze this specific lab result:
-    Test: ${testName}
-    Result Data: ${JSON.stringify(results)} ${unit ? `(${unit})` : ''}
-    Patient: ${patientAge} years old, ${patientGender}
-    
-    Return JSON:
-    1. clinicalInterpretation: What does this result (or set of results) indicate? Look for patterns if multiple values are provided (e.g. Anemia type based on MCV/MCH, or Dyslipidemia pattern).
-    2. referenceRangeComment: Comment on the values relative to standard biological reference ranges.
-    3. severityAssessment: "Normal", "Abnormal", or "Critical".
-    4. suggestedAction: What should the clinician do next? (e.g. Repeat test, specific medication, referral).
-  `;
+You are an expert Pathologist AI.
+Interpret the lab result conservatively.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
+Return ONLY JSON with keys:
+{
+  "clinicalInterpretation": string,
+  "referenceRangeComment": string,
+  "severityAssessment": "Normal"|"Abnormal"|"Critical",
+  "suggestedAction": string
+}
+
+Input:
+${JSON.stringify({ testName, results, unit, patientAge, patientGender }, null, 2)}
+`;
+
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      clinicalInterpretation: { type: Type.STRING },
-      referenceRangeComment: { type: Type.STRING },
-      severityAssessment: { type: Type.STRING },
-      suggestedAction: { type: Type.STRING }
-    }
+      clinicalInterpretation: { type: "string" },
+      referenceRangeComment: { type: "string" },
+      severityAssessment: { type: "string" },
+      suggestedAction: { type: "string" },
+    },
+    required: ["clinicalInterpretation", "referenceRangeComment", "severityAssessment", "suggestedAction"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as LabReportAnalysis;
-  } catch (e) {
-    return { 
-      clinicalInterpretation: "Analysis unavailable.", 
-      referenceRangeComment: "Please check standard ranges.", 
-      severityAssessment: "Abnormal", 
-      suggestedAction: "Correlate with clinical findings." 
-    };
-  }
-};
-
-export const checkDrugInteractions = async (prescriptions: Medication[], history: string): Promise<DrugInteractionResult> => {
-  if (!isAiAvailable()) {
-    return { hasInteractions: false, warnings: ["AI Check Offline"], recommendation: "Perform manual interaction check." };
-  }
-
-  const medNames = prescriptions.map(m => m.name).join(', ');
-  const prompt = `
-    Analyze these prescriptions for drug-drug interactions or contraindications with patient history.
-    
-    Prescriptions: ${medNames}
-    Patient History: ${history}
-    
-    Return JSON:
-    1. hasInteractions: boolean
-    2. warnings: string array of specific alerts (e.g. "Aspirin contraindicated with History of Ulcers")
-    3. recommendation: string advice for pharmacist
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      hasInteractions: { type: Type.BOOLEAN },
-      warnings: { type: Type.ARRAY, items: { type: Type.STRING } },
-      recommendation: { type: Type.STRING }
-    }
+  const fallback: LabReportAnalysis = {
+    clinicalInterpretation: "AI unavailable. Value requires clinical correlation.",
+    referenceRangeComment: "Check standard lab reference range.",
+    severityAssessment: "Abnormal" as any,
+    suggestedAction: "Manual review required.",
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as DrugInteractionResult;
-  } catch (e) {
-    return { hasInteractions: false, warnings: [], recommendation: "AI check unavailable. Proceed with manual verification." };
-  }
-};
+  const out = await generateJson<LabReportAnalysis>(prompt, schema, undefined, fallback);
 
-export const getDrugInfo = async (query: string): Promise<string> => {
-  if (!isAiAvailable()) return "AI Service Offline. Please consult MIMS/CIMS.";
+  return {
+    clinicalInterpretation: out?.clinicalInterpretation ?? fallback.clinicalInterpretation,
+    referenceRangeComment: out?.referenceRangeComment ?? fallback.referenceRangeComment,
+    severityAssessment: out?.severityAssessment ?? fallback.severityAssessment,
+    suggestedAction: out?.suggestedAction ?? fallback.suggestedAction,
+  };
+}
 
+export async function checkDrugInteractions(
+  prescriptions: Medication[],
+  history: string
+): Promise<DrugInteractionResult> {
   const prompt = `
-    You are an AI Pharmacist Assistant. Answer this query briefly for a clinical pharmacist:
-    Query: "${query}"
-    
-    Include: Mechanism of action, common side effects, and key counseling points if relevant. Keep it under 100 words.
-  `;
-  
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-    });
-    return response.text || "No information available.";
-  } catch (error) {
-    return "AI Service Unavailable.";
-  }
-};
+You are an AI Pharmacist.
+Check interactions/contraindications based on provided meds + history.
+Be cautious.
 
-export const getTelemedicineSummary = async (transcript: string): Promise<string> => {
-  if (!isAiAvailable()) return "AI Summary Offline. Please write notes manually.";
+Return ONLY JSON with keys:
+{
+  "hasInteractions": boolean,
+  "warnings": string[],
+  "recommendation": string
+}
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: `Summarize this medical consultation transcript into a professional clinical note (SOAP format):\n\n${transcript}`,
-    });
-    return response.text || "Could not generate summary.";
-  } catch (error) {
-    console.error(error);
-    return "Error generating summary.";
-  }
-};
+Input:
+${JSON.stringify({ prescriptions, history }, null, 2)}
+`;
 
-// --- Doctor Specific AI Agents ---
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      hasInteractions: { type: "boolean" },
+      warnings: { type: "array", items: { type: "string" } },
+      recommendation: { type: "string" },
+    },
+    required: ["hasInteractions", "warnings", "recommendation"],
+  };
 
+  const fallback: DrugInteractionResult = {
+    hasInteractions: false,
+    warnings: [],
+    recommendation: "AI check unavailable. Please verify manually.",
+  };
+
+  const out = await generateJson<DrugInteractionResult>(prompt, schema, undefined, fallback);
+
+  return {
+    hasInteractions: !!out?.hasInteractions,
+    warnings: out?.warnings ?? [],
+    recommendation: out?.recommendation ?? fallback.recommendation,
+  };
+}
+
+export async function getDrugInfo(query: string): Promise<string> {
+  const prompt = `
+You are an AI Pharmacist. Answer briefly (<120 words):
+"${query}"
+
+Include: MOA, common side effects, key counseling points.
+`;
+  const text = await generateText(prompt);
+  return text || "AI Service Unavailable.";
+}
+
+export async function getTelemedicineSummary(transcript: string): Promise<string> {
+  const prompt = `
+Summarize this medical consultation transcript into a SOAP note.
+Keep it concise and structured.
+
+Transcript:
+${transcript}
+`;
+  const text = await generateText(prompt);
+  return text || "AI Summary Unavailable.";
+}
+
+// --- Doctor Briefing ---
 export interface DoctorBriefing {
   priorities: string[];
   riskAlerts: string[];
   scheduleOptimization: string;
 }
 
-export const getDoctorDailyBriefing = async (doctorName: string, opdList: Patient[], ipdList: Patient[]): Promise<DoctorBriefing> => {
-  if (!isAiAvailable()) {
-    return {
-      priorities: ["Review Critical Patients", "Clear OPD Queue"],
-      riskAlerts: [],
-      scheduleOptimization: "System offline. Proceed with standard workflow."
-    };
-  }
-
-  const opdSummary = opdList.map(p => `${p.name} (${p.visitType})`).join(', ');
-  const ipdSummary = ipdList.map(p => `${p.name} (Triage: ${p.triageLevel})`).join(', ');
-  
+export async function getDoctorDailyBriefing(
+  doctorName: string,
+  opdList: Patient[],
+  ipdList: Patient[]
+): Promise<DoctorBriefing> {
   const prompt = `
-    You are a Clinical Executive Assistant for ${doctorName}.
-    OPD Queue: ${opdSummary}
-    Inpatient Rounds: ${ipdSummary}
-    
-    Provide a "Morning Briefing" JSON:
-    1. priorities: Top 3 tasks (e.g. "Review Patient X in ICU", "Clear 3 discharges").
-    2. riskAlerts: Any patients with 'Critical' status needing immediate rounds.
-    3. scheduleOptimization: Advice on how to manage the flow (e.g. "Finish ICU rounds before OPD starts at 10am").
-  `;
+You are a clinical executive assistant for Dr. ${doctorName}.
+Prepare a daily briefing.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
+Return ONLY JSON:
+{
+  "priorities": string[],
+  "riskAlerts": string[],
+  "scheduleOptimization": string
+}
+
+Input:
+${JSON.stringify({ opdList, ipdList }, null, 2)}
+`;
+
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      priorities: { type: Type.ARRAY, items: { type: Type.STRING } },
-      riskAlerts: { type: Type.ARRAY, items: { type: Type.STRING } },
-      scheduleOptimization: { type: Type.STRING }
-    }
+      priorities: { type: "array", items: { type: "string" } },
+      riskAlerts: { type: "array", items: { type: "string" } },
+      scheduleOptimization: { type: "string" },
+    },
+    required: ["priorities", "riskAlerts", "scheduleOptimization"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as DoctorBriefing;
-  } catch (e) {
-    return {
-      priorities: ["Start Ward Rounds", "Review Pending Labs"],
-      riskAlerts: [],
-      scheduleOptimization: "Proceed with standard schedule."
-    };
-  }
-};
+  const fallback: DoctorBriefing = {
+    priorities: ["Review critical patients first", "Clear high-urgency OPD cases"],
+    riskAlerts: [],
+    scheduleOptimization: "Proceed with standard rounds; monitor critical vitals.",
+  };
 
+  const out = await generateJson<DoctorBriefing>(prompt, schema, undefined, fallback);
+
+  return {
+    priorities: out?.priorities ?? [],
+    riskAlerts: out?.riskAlerts ?? [],
+    scheduleOptimization: out?.scheduleOptimization ?? fallback.scheduleOptimization,
+  };
+}
+
+// --- Discharge Readiness ---
 export interface DischargeReadiness {
-  score: number; // 0-100
-  status: 'Ready' | 'Not Ready' | 'Borderline';
+  score: number;
+  status: "Ready" | "Not Ready" | "Borderline";
   missingCriteria: string[];
   estimatedDischargeDate: string;
 }
 
-export const getDischargeReadiness = async (patient: Patient): Promise<DischargeReadiness> => {
-  if (!isAiAvailable()) return { score: 0, status: 'Not Ready', missingCriteria: ["AI Offline"], estimatedDischargeDate: "Unknown" };
-
+export async function getDischargeReadiness(patient: Patient): Promise<DischargeReadiness> {
   const prompt = `
-    Evaluate discharge readiness for this patient:
-    ${JSON.stringify(patient)}
-    
-    Return JSON:
-    1. score: 0-100 (100 = Fully Ready).
-    2. status: 'Ready', 'Not Ready', or 'Borderline'.
-    3. missingCriteria: List what is preventing discharge (e.g. "Fever spike yesterday", "Lab result pending").
-    4. estimatedDischargeDate: "Today", "Tomorrow", or "2-3 days".
-  `;
+Evaluate discharge readiness conservatively.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
+Return ONLY JSON:
+{
+  "score": number,
+  "status": "Ready" | "Not Ready" | "Borderline",
+  "missingCriteria": string[],
+  "estimatedDischargeDate": string
+}
+
+Patient:
+${JSON.stringify(patient, null, 2)}
+`;
+
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      score: { type: Type.NUMBER },
-      status: { type: Type.STRING },
-      missingCriteria: { type: Type.ARRAY, items: { type: Type.STRING } },
-      estimatedDischargeDate: { type: Type.STRING }
-    }
+      score: { type: "number" },
+      status: { type: "string" },
+      missingCriteria: { type: "array", items: { type: "string" } },
+      estimatedDischargeDate: { type: "string" },
+    },
+    required: ["score", "status", "missingCriteria", "estimatedDischargeDate"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as DischargeReadiness;
-  } catch (e) {
-    return {
-      score: 50, status: 'Not Ready', missingCriteria: ["Manual review required"], estimatedDischargeDate: "Unknown"
-    };
-  }
-};
+  const fallback: DischargeReadiness = {
+    score: 50,
+    status: "Borderline",
+    missingCriteria: [],
+    estimatedDischargeDate: "Unknown",
+  };
 
-// --- Nurse Specific AI Agents ---
+  const out = await generateJson<DischargeReadiness>(prompt, schema, undefined, fallback);
 
+  return {
+    score: Number(out?.score ?? fallback.score),
+    status: (out?.status as any) || fallback.status,
+    missingCriteria: out?.missingCriteria ?? [],
+    estimatedDischargeDate: out?.estimatedDischargeDate ?? fallback.estimatedDischargeDate,
+  };
+}
+
+// --- Nurse: Vitals Risk ---
 export interface VitalsAnalysis {
-  riskScore: number; // Early Warning Score (EWS) style
-  riskLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  riskScore: number;
+  riskLevel: "Low" | "Medium" | "High" | "Critical";
   alertMessage: string;
   clinicalAction: string;
 }
 
-export const analyzeVitalsRisk = async (vitals: any, age: number): Promise<VitalsAnalysis> => {
-  if (!isAiAvailable()) return { riskScore: 0, riskLevel: 'Low', alertMessage: "AI Offline", clinicalAction: "Follow standard protocol" };
-
+export async function analyzeVitalsRisk(vitals: any, age: number): Promise<VitalsAnalysis> {
   const prompt = `
-    You are an AI Nursing Assistant calculating an Early Warning Score (EWS).
-    Patient Age: ${age}
-    Vitals: ${JSON.stringify(vitals)}
-    
-    Return JSON:
-    1. riskScore: A number 0-10 (simulated NEWS2 score).
-    2. riskLevel: "Low", "Medium", "High", or "Critical".
-    3. alertMessage: Brief warning (e.g. "Tachycardia with Hypoxia").
-    4. clinicalAction: Immediate nurse action (e.g. "Increase O2 flow, Inform Doctor immediately").
-  `;
+You are an AI Nursing Assistant. Analyze vitals conservatively.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
+Return ONLY JSON:
+{
+  "riskScore": number,
+  "riskLevel": "Low" | "Medium" | "High" | "Critical",
+  "alertMessage": string,
+  "clinicalAction": string
+}
+
+Input:
+${JSON.stringify({ vitals, age }, null, 2)}
+`;
+
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      riskScore: { type: Type.NUMBER },
-      riskLevel: { type: Type.STRING },
-      alertMessage: { type: Type.STRING },
-      clinicalAction: { type: Type.STRING }
-    }
+      riskScore: { type: "number" },
+      riskLevel: { type: "string" },
+      alertMessage: { type: "string" },
+      clinicalAction: { type: "string" },
+    },
+    required: ["riskScore", "riskLevel", "alertMessage", "clinicalAction"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as VitalsAnalysis;
-  } catch (e) {
-    return {
-      riskScore: 0, riskLevel: 'Low', alertMessage: "Analysis unavailable", clinicalAction: "Monitor standard protocol"
-    };
-  }
-};
+  const fallback: VitalsAnalysis = {
+    riskScore: 0,
+    riskLevel: "Low",
+    alertMessage: "AI unavailable",
+    clinicalAction: "Follow standard protocol",
+  };
 
+  const out = await generateJson<VitalsAnalysis>(prompt, schema, undefined, fallback);
+
+  return {
+    riskScore: Number(out?.riskScore ?? fallback.riskScore),
+    riskLevel: (out?.riskLevel as any) || fallback.riskLevel,
+    alertMessage: out?.alertMessage ?? fallback.alertMessage,
+    clinicalAction: out?.clinicalAction ?? fallback.clinicalAction,
+  };
+}
+
+// --- Nurse: Shift Handover ---
 export interface NurseHandover {
   shiftSummary: string;
   criticalPatients: string[];
   pendingTasks: string[];
 }
 
-export const getNurseShiftHandover = async (patients: Patient[]): Promise<NurseHandover> => {
-  if (!isAiAvailable()) return { shiftSummary: "Handover system offline.", criticalPatients: [], pendingTasks: [] };
-
-  const summary = patients.map(p => ({
-    name: p.name,
-    ward: p.ward,
-    condition: p.triageLevel,
-    diagnosis: p.history
-  }));
-
+export async function getNurseShiftHandover(patients: Patient[]): Promise<NurseHandover> {
   const prompt = `
-    You are the Charge Nurse creating a Shift Handover Report.
-    Ward Patients: ${JSON.stringify(summary)}
-    
-    Return JSON:
-    1. shiftSummary: A paragraph summarizing the ward status (e.g. "Quiet shift, 2 new admissions...").
-    2. criticalPatients: List of patients needing close watch.
-    3. pendingTasks: General pending items (e.g. "Check night vitals", "Restock crash cart").
-  `;
+Create a nursing shift handover summary.
+Be concise and clinically safe.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
+Return ONLY JSON:
+{
+  "shiftSummary": string,
+  "criticalPatients": string[],
+  "pendingTasks": string[]
+}
+
+Patients:
+${JSON.stringify(patients, null, 2)}
+`;
+
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      shiftSummary: { type: Type.STRING },
-      criticalPatients: { type: Type.ARRAY, items: { type: Type.STRING } },
-      pendingTasks: { type: Type.ARRAY, items: { type: Type.STRING } }
-    }
+      shiftSummary: { type: "string" },
+      criticalPatients: { type: "array", items: { type: "string" } },
+      pendingTasks: { type: "array", items: { type: "string" } },
+    },
+    required: ["shiftSummary", "criticalPatients", "pendingTasks"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as NurseHandover;
-  } catch (e) {
-    return {
-      shiftSummary: "Handover generation failed.",
-      criticalPatients: [],
-      pendingTasks: ["Perform manual handover"]
-    };
-  }
-};
+  const fallback: NurseHandover = {
+    shiftSummary: "AI unavailable. Perform manual handover.",
+    criticalPatients: [],
+    pendingTasks: [],
+  };
 
-// --- Executive & Administrative AI ---
+  const out = await generateJson<NurseHandover>(prompt, schema, undefined, fallback);
 
+  return {
+    shiftSummary: out?.shiftSummary ?? fallback.shiftSummary,
+    criticalPatients: out?.criticalPatients ?? [],
+    pendingTasks: out?.pendingTasks ?? [],
+  };
+}
+
+// --- Executive Briefing ---
 export interface ExecutiveBriefing {
   situationReport: string;
   criticalAlerts: string[];
   recommendedActions: string[];
 }
 
-export const getExecutiveBriefing = async (metrics: any): Promise<ExecutiveBriefing> => {
-  if (!isAiAvailable()) {
-    return {
-      situationReport: "AI Dashboard Offline. Metrics are live but intelligence is disabled.",
-      criticalAlerts: ["Check database connectivity", "Verify API Keys"],
-      recommendedActions: ["Contact IT Support"]
-    };
-  }
-
+export async function getExecutiveBriefing(metrics: any): Promise<ExecutiveBriefing> {
   const prompt = `
-    You are the AI Chief of Staff to the Principal Secretary of Health, Andhra Pradesh.
-    Analyze the current state health metrics:
-    ${JSON.stringify(metrics)}
-    
-    Provide a "Morning Briefing" in structured JSON.
-    1. situationReport: A professional, high-level summary of the state's health status (2-3 sentences).
-    2. criticalAlerts: 2-3 bullet points on urgent issues (e.g. bed shortages, outbreaks).
-    3. recommendedActions: 2-3 strategic policy or administrative actions required.
-  `;
+You are the AI Chief of Staff for a state health department.
+Summarize the operational situation based on metrics.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      situationReport: { type: Type.STRING },
-      criticalAlerts: { type: Type.ARRAY, items: { type: Type.STRING } },
-      recommendedActions: { type: Type.ARRAY, items: { type: Type.STRING } }
-    }
-  };
-
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as ExecutiveBriefing;
-  } catch (e) {
-    return {
-      situationReport: "Unable to generate live briefing. Metrics indicate normal operational ranges.",
-      criticalAlerts: ["Monitor ongoing viral fevers in coastal districts."],
-      recommendedActions: ["Review weekly supply chain reports."]
-    };
-  }
-};
-
-export interface StatewideCrisisPlan {
-  threatAssessment: string;
-  resourceAllocations: string[];
-  policyOrderDraft: string;
+Return ONLY JSON:
+{
+  "situationReport": string,
+  "criticalAlerts": string[],
+  "recommendedActions": string[]
 }
 
-export const getStatewideResourcePlan = async (data: any): Promise<StatewideCrisisPlan> => {
-  if (!isAiAvailable()) return { threatAssessment: "AI Offline", resourceAllocations: [], policyOrderDraft: "N/A" };
+Metrics:
+${JSON.stringify(metrics, null, 2)}
+`;
 
-  const prompt = `
-    You are the "AI Crisis Commander" for the State of Andhra Pradesh Health Dept.
-    Data: ${JSON.stringify(data)}
-    
-    Context: 
-    - Referrals are peaking from tribal areas to city hospitals.
-    - Vector-borne disease flags are high in coastal regions.
-    - Bed occupancy in teaching hospitals is >85%.
-
-    Generate a Strategic Resource Plan (JSON):
-    1. threatAssessment: High-level summary of the pressure points (e.g., "Critical bottleneck in Visakhapatnam Tertiary Care").
-    2. resourceAllocations: Specific movement orders (e.g., "Deploy mobile medical units to Araku", "Divert stable patients to District Hospitals").
-    3. policyOrderDraft: A short draft executive order for the Principal Secretary (e.g., "Invoke Epidemic Act to requisition private beds").
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      threatAssessment: { type: Type.STRING },
-      resourceAllocations: { type: Type.ARRAY, items: { type: Type.STRING } },
-      policyOrderDraft: { type: Type.STRING }
-    }
+      situationReport: { type: "string" },
+      criticalAlerts: { type: "array", items: { type: "string" } },
+      recommendedActions: { type: "array", items: { type: "string" } },
+    },
+    required: ["situationReport", "criticalAlerts", "recommendedActions"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as StatewideCrisisPlan;
-  } catch (e) {
-    return {
-      threatAssessment: "System load is high. Data stream interrupted.",
-      resourceAllocations: ["Alert all DMHOs to standby."],
-      policyOrderDraft: "Standby for further instructions."
-    };
-  }
-};
-
-export const getInfrastructurePlan = async (data: any): Promise<InfrastructurePlan> => {
-  if (!isAiAvailable()) return { planSummary: "AI Offline", resourceAllocation: [], priorityAreas: [] };
-
-  const prompt = `
-    You are the Strategic Planning AI for AP Health Infrastructure.
-    Current Status: ${JSON.stringify(data)}
-    
-    Advise on Blood Bank & Tele-ICU optimization.
-    
-    Return JSON:
-    1. planSummary: 2 sentences on network health.
-    2. resourceAllocation: Where to move blood units or deploy specialists.
-    3. priorityAreas: Districts needing immediate infrastructure upgrade.
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      planSummary: { type: Type.STRING },
-      resourceAllocation: { type: Type.ARRAY, items: { type: Type.STRING } },
-      priorityAreas: { type: Type.ARRAY, items: { type: Type.STRING } }
-    }
+  const fallback: ExecutiveBriefing = {
+    situationReport: "AI unavailable. Review metrics manually.",
+    criticalAlerts: [],
+    recommendedActions: [],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as InfrastructurePlan;
-  } catch (e) {
-    return { planSummary: "Analysis pending.", resourceAllocation: [], priorityAreas: [] };
-  }
-};
+  const out = await generateJson<ExecutiveBriefing>(prompt, schema, undefined, fallback);
 
+  return {
+    situationReport: out?.situationReport ?? fallback.situationReport,
+    criticalAlerts: out?.criticalAlerts ?? [],
+    recommendedActions: out?.recommendedActions ?? [],
+  };
+}
+
+// --- Registry Analysis ---
 export interface RegistryAnalysis {
   epidemicTrend: string;
   hotspotAlert: string;
   publicHealthIntervention: string;
 }
 
-export const getRegistryAnalysis = async (data: RegistryEntry[]): Promise<RegistryAnalysis> => {
-  if (!isAiAvailable()) return { epidemicTrend: "N/A", hotspotAlert: "N/A", publicHealthIntervention: "N/A" };
-
-  // Aggregate data for AI
-  const summary = data.reduce((acc, curr) => {
-    acc[curr.type] = (acc[curr.type] || 0) + 1;
-    acc[curr.district] = (acc[curr.district] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
+export async function getRegistryAnalysis(data: RegistryEntry[]): Promise<RegistryAnalysis> {
   const prompt = `
-    You are the State Epidemiologist for Andhra Pradesh.
-    Analyze these registry counts: ${JSON.stringify(summary)}.
-    
-    Return JSON:
-    1. epidemicTrend: Observation on disease spread (e.g. "Rising Dengue cases").
-    2. hotspotAlert: Identify the district requiring attention.
-    3. publicHealthIntervention: Specific action (e.g. "Deploy vector control teams").
-  `;
+You are the State Epidemiologist.
+Analyze registry entries for trend and hotspots.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      epidemicTrend: { type: Type.STRING },
-      hotspotAlert: { type: Type.STRING },
-      publicHealthIntervention: { type: Type.STRING }
-    }
-  };
-
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as RegistryAnalysis;
-  } catch (e) {
-    return {
-      epidemicTrend: "Data insufficient for trend analysis.",
-      hotspotAlert: "None detected.",
-      publicHealthIntervention: "Continue standard surveillance."
-    };
-  }
-};
-
-export interface GenomicPolicyInsight {
-  policyRecommendation: string;
-  procurementAdvice: string;
+Return ONLY JSON:
+{
+  "epidemicTrend": string,
+  "hotspotAlert": string,
+  "publicHealthIntervention": string
 }
 
-export const getGenomicInsights = async (riskCounts: any): Promise<GenomicPolicyInsight> => {
-  if (!isAiAvailable()) return { policyRecommendation: "N/A", procurementAdvice: "N/A" };
+Data:
+${JSON.stringify(data, null, 2)}
+`;
 
-  const prompt = `
-    You are the Precision Medicine Policy Advisor for AP Govt.
-    Genomic Risk Data: ${JSON.stringify(riskCounts)}.
-    
-    Provide strategic advice in JSON:
-    1. policyRecommendation: A policy shift (e.g. "Mandatory screening for X").
-    2. procurementAdvice: Drug/Test kit procurement (e.g. "Increase Hydroxyurea stock").
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      policyRecommendation: { type: Type.STRING },
-      procurementAdvice: { type: Type.STRING }
-    }
+      epidemicTrend: { type: "string" },
+      hotspotAlert: { type: "string" },
+      publicHealthIntervention: { type: "string" },
+    },
+    required: ["epidemicTrend", "hotspotAlert", "publicHealthIntervention"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as GenomicPolicyInsight;
-  } catch (e) {
-    return {
-      policyRecommendation: "Expand screening in tribal areas.",
-      procurementAdvice: "Maintain current inventory of genetic testing kits."
-    };
-  }
-};
+  const fallback: RegistryAnalysis = {
+    epidemicTrend: "Insufficient data",
+    hotspotAlert: "None detected",
+    publicHealthIntervention: "Continue routine surveillance",
+  };
 
+  return await generateJson<RegistryAnalysis>(prompt, schema, undefined, fallback);
+}
+
+// --- Audit Analysis ---
 export interface SecurityAnalysis {
-  threatLevel: 'Low' | 'Medium' | 'High';
+  threatLevel: "Low" | "Medium" | "High";
   summary: string;
 }
 
-export const getAuditAnalysis = async (logs: AuditLog[]): Promise<SecurityAnalysis> => {
-  if (!isAiAvailable()) return { threatLevel: "Low", summary: "Audit AI Offline." };
-
-  const recentLogs = logs.slice(0, 20).map(l => `${l.action} by ${l.role}: ${l.details}`).join('\n');
+export async function getAuditAnalysis(logs: AuditLog[]): Promise<SecurityAnalysis> {
   const prompt = `
-    You are the AI CISO (Chief Information Security Officer).
-    Analyze recent system logs:
-    ${recentLogs}
-    
-    Return JSON:
-    1. threatLevel: 'Low', 'Medium', or 'High'.
-    2. summary: A security posture statement.
-  `;
-  
-  const schema: Schema = {
-    type: Type.OBJECT,
+You are the AI CISO.
+Analyze audit logs for suspicious behavior.
+
+Return ONLY JSON:
+{
+  "threatLevel": "Low" | "Medium" | "High",
+  "summary": string
+}
+
+Logs:
+${JSON.stringify(logs.slice(0, 50), null, 2)}
+`;
+
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      threatLevel: { type: Type.STRING },
-      summary: { type: Type.STRING }
-    }
+      threatLevel: { type: "string" },
+      summary: { type: "string" },
+    },
+    required: ["threatLevel", "summary"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as SecurityAnalysis;
-  } catch (e) {
-    return { threatLevel: 'Low', summary: "Routine system activity. No anomalies detected." };
-  }
-};
+  const fallback: SecurityAnalysis = {
+    threatLevel: "Low",
+    summary: "AI unavailable. No automated findings.",
+  };
 
-// --- Hospital Admin AI Agents ---
+  const out = await generateJson<SecurityAnalysis>(prompt, schema, undefined, fallback);
+  return {
+    threatLevel: (out?.threatLevel as any) || fallback.threatLevel,
+    summary: out?.summary ?? fallback.summary,
+  };
+}
 
+// --- Hospital Operations ---
 export interface HospitalOpsAnalysis {
   efficiencyScore: number;
   bottleneckAlert: string;
   staffingRecommendation: string;
 }
 
-export const getHospitalOperationsAnalysis = async (metrics: any): Promise<HospitalOpsAnalysis> => {
-  if (!isAiAvailable()) return { efficiencyScore: 0, bottleneckAlert: "AI Offline", staffingRecommendation: "N/A" };
-
+export async function getHospitalOperationsAnalysis(metrics: any): Promise<HospitalOpsAnalysis> {
   const prompt = `
-    You are the AI Operations Director for a busy hospital.
-    Current Metrics: ${JSON.stringify(metrics)}
-    
-    Return JSON:
-    1. efficiencyScore: number (0-100).
-    2. bottleneckAlert: Identify critical workflow issue (e.g. "ER Overcrowding").
-    3. staffingRecommendation: Advice on resource allocation.
-  `;
+You are the AI Operations Director.
+Analyze hospital operations metrics.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      efficiencyScore: { type: Type.NUMBER },
-      bottleneckAlert: { type: Type.STRING },
-      staffingRecommendation: { type: Type.STRING }
-    }
-  };
-
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as HospitalOpsAnalysis;
-  } catch (e) {
-    return { efficiencyScore: 85, bottleneckAlert: "Data insufficient", staffingRecommendation: "Maintain current roster" };
-  }
-};
-
-export const analyzeStaffingImpact = async (request: any, currentRoster: string): Promise<StaffingImpactAnalysis> => {
-  if (!isAiAvailable()) return { approvalRisk: 'Low', impactSummary: "Manual Review Needed", recommendation: "N/A" };
-
-  const prompt = `
-    You are an AI HR Director for a hospital. A staff member wants leave.
-    Leave Request: ${JSON.stringify(request)}
-    Current Roster Status: ${currentRoster}
-    
-    Analyze impact on patient care.
-    
-    Return JSON:
-    1. approvalRisk: 'Low', 'Medium', or 'High'.
-    2. impactSummary: Consequence of approval (e.g., "Cardiology unit will be short-staffed").
-    3. recommendation: "Approve" or "Reject with reason".
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      approvalRisk: { type: Type.STRING },
-      impactSummary: { type: Type.STRING },
-      recommendation: { type: Type.STRING }
-    }
-  };
-
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as StaffingImpactAnalysis;
-  } catch (e) {
-    return { approvalRisk: 'Low', impactSummary: 'Check manual roster.', recommendation: 'Review manually' };
-  }
-};
-
-export interface RevenueInsight {
-  trend: 'Up' | 'Down' | 'Stable';
-  insight: string;
-  actionableTip: string;
+Return ONLY JSON:
+{
+  "efficiencyScore": number,
+  "bottleneckAlert": string,
+  "staffingRecommendation": string
 }
 
-export const getRevenueAnalysis = async (revenueData: any): Promise<RevenueInsight> => {
-  if (!isAiAvailable()) return { trend: 'Stable', insight: "AI Offline", actionableTip: "Review Manually" };
+Metrics:
+${JSON.stringify(metrics, null, 2)}
+`;
 
-  const prompt = `
-    You are the AI Financial Analyst for the hospital.
-    Data: ${JSON.stringify(revenueData)}
-    
-    Return JSON:
-    1. trend: "Up", "Down", or "Stable".
-    2. insight: Key observation on billing/claims.
-    3. actionableTip: Advice to improve cash flow or reduce rejection.
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      trend: { type: Type.STRING },
-      insight: { type: Type.STRING },
-      actionableTip: { type: Type.STRING }
-    }
+      efficiencyScore: { type: "number" },
+      bottleneckAlert: { type: "string" },
+      staffingRecommendation: { type: "string" },
+    },
+    required: ["efficiencyScore", "bottleneckAlert", "staffingRecommendation"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as RevenueInsight;
-  } catch (e) {
-    return { trend: 'Stable', insight: "Steady revenue stream.", actionableTip: "Review pending claims." };
-  }
-};
+  const fallback: HospitalOpsAnalysis = {
+    efficiencyScore: 0,
+    bottleneckAlert: "AI unavailable",
+    staffingRecommendation: "Review roster manually",
+  };
 
-export interface AssetPrediction {
-  riskLevel: 'Low' | 'Medium' | 'High';
-  predictedFailures: string[];
-  maintenanceAdvice: string;
+  const out = await generateJson<HospitalOpsAnalysis>(prompt, schema, undefined, fallback);
+
+  return {
+    efficiencyScore: Number(out?.efficiencyScore ?? fallback.efficiencyScore),
+    bottleneckAlert: out?.bottleneckAlert ?? fallback.bottleneckAlert,
+    staffingRecommendation: out?.staffingRecommendation ?? fallback.staffingRecommendation,
+  };
 }
 
-export const getAssetMaintenancePrediction = async (assets: any): Promise<AssetPrediction> => {
-  if (!isAiAvailable()) return { riskLevel: 'Low', predictedFailures: [], maintenanceAdvice: "Maintenance AI Offline" };
-
+export async function analyzeStaffingImpact(
+  request: any,
+  currentRoster: string
+): Promise<StaffingImpactAnalysis> {
   const prompt = `
-    You are the AI Infrastructure Monitor.
-    Asset Status: ${JSON.stringify(assets)}
-    
-    Return JSON:
-    1. riskLevel: Overall equipment risk.
-    2. predictedFailures: List of equipment names at risk.
-    3. maintenanceAdvice: Strategy for upcoming week.
-  `;
+You are the AI HR Director.
+Assess staffing impact of this request.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
+Return ONLY JSON with the same keys as StaffingImpactAnalysis.
+
+Input:
+${JSON.stringify({ request, currentRoster }, null, 2)}
+`;
+
+  // If you know exact StaffingImpactAnalysis schema, put it here.
+  // For now, no schema, but still request JSON and harden later.
+  const fallback = {
+    approvalRisk: "Low",
+    impactSummary: "AI unavailable. Manual review required.",
+    recommendation: "Review roster manually.",
+  } as any;
+
+  const out = await generateJson<StaffingImpactAnalysis>(prompt, undefined, undefined, fallback);
+
+  return (out ?? fallback) as StaffingImpactAnalysis;
+}
+
+// --- Inventory / Infrastructure ---
+export async function getInfrastructurePlan(data: any): Promise<InfrastructurePlan> {
+  const prompt = `
+You are Strategic Planning AI.
+Create an infrastructure plan.
+
+Return ONLY JSON with keys matching InfrastructurePlan.
+
+Input:
+${JSON.stringify(data, null, 2)}
+`;
+  const fallback = {
+    planSummary: "AI unavailable",
+    resourceAllocation: [],
+    priorityAreas: [],
+  } as any;
+
+  const out = await generateJson<InfrastructurePlan>(prompt, undefined, undefined, fallback);
+
+  // harden common fields if present
+  return {
+    ...(out as any),
+    resourceAllocation: (out as any)?.resourceAllocation ?? [],
+    priorityAreas: (out as any)?.priorityAreas ?? [],
+  } as InfrastructurePlan;
+}
+export interface StatewideCrisisPlan {
+  threatAssessment: string;
+  resourceAllocations: string[];
+  policyOrderDraft: string;
+}
+
+export async function getStatewideResourcePlan(data: any): Promise<StatewideCrisisPlan> {
+  const prompt = `
+You are the AI Crisis Commander for a State Health Department.
+Based on the input data, create a statewide resource plan.
+
+Return ONLY JSON:
+{
+  "threatAssessment": string,
+  "resourceAllocations": string[],
+  "policyOrderDraft": string
+}
+
+Input:
+${JSON.stringify(data, null, 2)}
+`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      riskLevel: { type: Type.STRING },
-      predictedFailures: { type: Type.ARRAY, items: { type: Type.STRING } },
-      maintenanceAdvice: { type: Type.STRING }
-    }
+      threatAssessment: { type: "string" },
+      resourceAllocations: { type: "array", items: { type: "string" } },
+      policyOrderDraft: { type: "string" },
+    },
+    required: ["threatAssessment", "resourceAllocations", "policyOrderDraft"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as AssetPrediction;
-  } catch (e) {
-    return { riskLevel: 'Low', predictedFailures: [], maintenanceAdvice: "Routine schedule." };
-  }
-};
+  const fallback: StatewideCrisisPlan = {
+    threatAssessment: "AI unavailable. Please review data manually.",
+    resourceAllocations: [],
+    policyOrderDraft: "AI unavailable. Draft policy manually based on SOP.",
+  };
 
+  const out = await generateJson<StatewideCrisisPlan>(prompt, schema, undefined, fallback);
+
+  return {
+    threatAssessment: out?.threatAssessment ?? fallback.threatAssessment,
+    resourceAllocations: out?.resourceAllocations ?? [],
+    policyOrderDraft: out?.policyOrderDraft ?? fallback.policyOrderDraft,
+  };
+}
 export interface InventoryInsight {
   stockoutRisk: string[];
   procurementAdvice: string;
 }
 
-export const getInventoryOptimization = async (inventory: any): Promise<InventoryInsight> => {
-  if (!isAiAvailable()) return { stockoutRisk: [], procurementAdvice: "Inventory AI Offline" };
-
+export async function getInventoryOptimization(inventory: any): Promise<InventoryInsight> {
   const prompt = `
-    You are the AI Supply Chain Optimizer.
-    Inventory: ${JSON.stringify(inventory)}
-    
-    Return JSON:
-    1. stockoutRisk: List of drugs likely to run out soon based on stocks < 500.
-    2. procurementAdvice: Ordering strategy.
-  `;
+You are an AI Supply Chain Optimizer for a hospital.
+Identify likely stock-out risks and procurement actions.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
+Return ONLY JSON:
+{
+  "stockoutRisk": string[],
+  "procurementAdvice": string
+}
+
+Inventory:
+${JSON.stringify(inventory, null, 2)}
+`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      stockoutRisk: { type: Type.ARRAY, items: { type: Type.STRING } },
-      procurementAdvice: { type: Type.STRING }
-    }
+      stockoutRisk: { type: "array", items: { type: "string" } },
+      procurementAdvice: { type: "string" },
+    },
+    required: ["stockoutRisk", "procurementAdvice"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as InventoryInsight;
-  } catch (e) {
-    return { stockoutRisk: [], procurementAdvice: "Monitor stock levels." };
-  }
-};
+  const fallback: InventoryInsight = {
+    stockoutRisk: [],
+    procurementAdvice: "AI unavailable. Review reorder levels manually.",
+  };
 
-// --- Queue Management AI ---
+  const out = await generateJson<InventoryInsight>(prompt, schema, undefined, fallback);
 
+  return {
+    stockoutRisk: out?.stockoutRisk ?? [],
+    procurementAdvice: out?.procurementAdvice ?? fallback.procurementAdvice,
+  };
+}
+export interface LabQualityAnalysis {
+  tatScore: number; // 0-100
+  efficiencyTrend: "Improving" | "Declining" | "Stable";
+  calibrationAlert: string;
+  staffingAdvice: string;
+}
+
+export async function getLabQualityAnalysis(labMetrics: any): Promise<LabQualityAnalysis> {
+  const prompt = `
+You are an AI Lab Quality Manager.
+Analyze lab metrics and provide operational quality insights.
+
+Return ONLY JSON:
+{
+  "tatScore": number,
+  "efficiencyTrend": "Improving" | "Declining" | "Stable",
+  "calibrationAlert": string,
+  "staffingAdvice": string
+}
+
+Lab Metrics:
+${JSON.stringify(labMetrics, null, 2)}
+`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      tatScore: { type: "number" },
+      efficiencyTrend: { type: "string", enum: ["Improving", "Declining", "Stable"] },
+      calibrationAlert: { type: "string" },
+      staffingAdvice: { type: "string" },
+    },
+    required: ["tatScore", "efficiencyTrend", "calibrationAlert", "staffingAdvice"],
+  };
+
+  const fallback: LabQualityAnalysis = {
+    tatScore: 0,
+    efficiencyTrend: "Stable",
+    calibrationAlert: "AI unavailable. Verify QC logs manually.",
+    staffingAdvice: "AI unavailable. Review staffing vs workload manually.",
+  };
+
+  const out = await generateJson<LabQualityAnalysis>(prompt, schema, undefined, fallback);
+
+  return {
+    tatScore: Number(out?.tatScore ?? fallback.tatScore),
+    efficiencyTrend: (out?.efficiencyTrend as any) || fallback.efficiencyTrend,
+    calibrationAlert: out?.calibrationAlert ?? fallback.calibrationAlert,
+    staffingAdvice: out?.staffingAdvice ?? fallback.staffingAdvice,
+  };
+}
+export interface GenomicPolicyInsight {
+  policyRecommendation: string;
+  procurementAdvice: string;
+}
+
+export async function getGenomicInsights(riskCounts: any): Promise<GenomicPolicyInsight> {
+  const prompt = `
+You are a Precision Medicine Policy Advisor.
+Based on genomic risk distribution (counts/summary), propose policy and procurement recommendations.
+
+Return ONLY JSON:
+{
+  "policyRecommendation": string,
+  "procurementAdvice": string
+}
+
+Input:
+${JSON.stringify(riskCounts, null, 2)}
+`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      policyRecommendation: { type: "string" },
+      procurementAdvice: { type: "string" },
+    },
+    required: ["policyRecommendation", "procurementAdvice"],
+  };
+
+  const fallback: GenomicPolicyInsight = {
+    policyRecommendation: "AI unavailable. Continue current screening and referral protocols.",
+    procurementAdvice: "AI unavailable. Review testing kit inventory and reorder thresholds manually.",
+  };
+
+  const out = await generateJson<GenomicPolicyInsight>(prompt, schema, undefined, fallback);
+
+  return {
+    policyRecommendation: out?.policyRecommendation ?? fallback.policyRecommendation,
+    procurementAdvice: out?.procurementAdvice ?? fallback.procurementAdvice,
+  };
+}
+export interface RevenueInsight {
+  trend: "Up" | "Down" | "Stable";
+  insight: string;
+  actionableTip: string;
+}
+
+export async function getRevenueAnalysis(revenueData: any): Promise<RevenueInsight> {
+  const prompt = `
+You are an AI Financial Analyst for a hospital.
+Analyze revenue data and provide a short, actionable insight.
+
+Return ONLY JSON:
+{
+  "trend": "Up" | "Down" | "Stable",
+  "insight": string,
+  "actionableTip": string
+}
+
+Revenue Data:
+${JSON.stringify(revenueData, null, 2)}
+`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      trend: { type: "string", enum: ["Up", "Down", "Stable"] },
+      insight: { type: "string" },
+      actionableTip: { type: "string" },
+    },
+    required: ["trend", "insight", "actionableTip"],
+  };
+
+  const fallback: RevenueInsight = {
+    trend: "Stable",
+    insight: "AI unavailable. Review billing and collections manually.",
+    actionableTip: "Reconcile pending claims and review top unpaid invoices.",
+  };
+
+  const out = await generateJson<RevenueInsight>(prompt, schema, undefined, fallback);
+
+  return {
+    trend: (out?.trend as any) || fallback.trend,
+    insight: out?.insight ?? fallback.insight,
+    actionableTip: out?.actionableTip ?? fallback.actionableTip,
+  };
+}
+export interface AssetPrediction {
+  riskLevel: "Low" | "Medium" | "High";
+  predictedFailures: string[];
+  maintenanceAdvice: string;
+}
+
+export async function getAssetMaintenancePrediction(assets: any): Promise<AssetPrediction> {
+  const prompt = `
+You are the AI Infrastructure Monitor for a hospital.
+Given assets and any available usage/maintenance signals, predict likely failures and recommend maintenance actions.
+Be conservative and avoid fabricating unknown sensor data.
+
+Return ONLY JSON:
+{
+  "riskLevel": "Low" | "Medium" | "High",
+  "predictedFailures": string[],
+  "maintenanceAdvice": string
+}
+
+Assets:
+${JSON.stringify(assets, null, 2)}
+`;
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      riskLevel: { type: "string", enum: ["Low", "Medium", "High"] },
+      predictedFailures: { type: "array", items: { type: "string" } },
+      maintenanceAdvice: { type: "string" },
+    },
+    required: ["riskLevel", "predictedFailures", "maintenanceAdvice"],
+  };
+
+  const fallback: AssetPrediction = {
+    riskLevel: "Low",
+    predictedFailures: [],
+    maintenanceAdvice: "AI unavailable. Follow preventive maintenance schedule and review recent breakdown logs.",
+  };
+
+  const out = await generateJson<AssetPrediction>(prompt, schema, undefined, fallback);
+
+  return {
+    riskLevel: (out?.riskLevel as any) || fallback.riskLevel,
+    predictedFailures: out?.predictedFailures ?? [],
+    maintenanceAdvice: out?.maintenanceAdvice ?? fallback.maintenanceAdvice,
+  };
+}
+
+// --- Queue Analysis (PatientList uses this) ---
 export interface QueueAnalysis {
   efficiencyScore: number;
   criticalAlerts: string[];
@@ -900,185 +1028,102 @@ export interface QueueAnalysis {
   resourceAdvice: string;
 }
 
-export const getQueueAnalysis = async (patients: Patient[]): Promise<QueueAnalysis> => {
-  if (!isAiAvailable()) return { efficiencyScore: 50, criticalAlerts: [], reorderingSuggestions: [], resourceAdvice: "Queue AI Offline" };
-
-  // Simplify patient data to save tokens
-  const queueSummary = patients.map(p => ({
-    id: p.id,
-    name: p.name,
-    triage: p.triageLevel,
-    symptoms: p.symptoms,
-    visitType: p.visitType,
-    vitals: p.vitals
-  }));
-
+export async function getQueueAnalysis(patients: Patient[]): Promise<QueueAnalysis> {
   const prompt = `
-    You are the AI Triage Master for a busy hospital ER and OPD.
-    Analyze this patient queue: ${JSON.stringify(queueSummary)}
-    
-    Return JSON:
-    1. efficiencyScore: number (0-100) based on current load and triage mix.
-    2. criticalAlerts: List names of patients who might be deteriorating or under-triaged based on symptoms/vitals (e.g. "Patient X has chest pain but listed as Standard").
-    3. reorderingSuggestions: Specific advice on who to see next (e.g. "Move Patient Y to front").
-    4. resourceAdvice: Suggestion to open more counters/beds if load is high.
-  `;
+You are the AI Triage Master.
+Optimize the queue safely.
 
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      efficiencyScore: { type: Type.NUMBER },
-      criticalAlerts: { type: Type.ARRAY, items: { type: Type.STRING } },
-      reorderingSuggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-      resourceAdvice: { type: Type.STRING }
-    }
-  };
-
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as QueueAnalysis;
-  } catch (e) {
-    return { 
-      efficiencyScore: 75, 
-      criticalAlerts: [], 
-      reorderingSuggestions: ["Prioritize Emergency cases."], 
-      resourceAdvice: "Monitor queue length." 
-    };
-  }
-};
-
-// --- Lab Tech AI ---
-
-export interface LabQualityAnalysis {
-  tatScore: number;
-  efficiencyTrend: 'Improving' | 'Declining' | 'Stable';
-  calibrationAlert: string;
-  staffingAdvice: string;
+Return ONLY JSON:
+{
+  "efficiencyScore": number,
+  "criticalAlerts": string[],
+  "reorderingSuggestions": string[],
+  "resourceAdvice": string
 }
 
-export const getLabQualityAnalysis = async (labMetrics: any): Promise<LabQualityAnalysis> => {
-  if (!isAiAvailable()) return { tatScore: 0, efficiencyTrend: 'Stable', calibrationAlert: "N/A", staffingAdvice: "N/A" };
+Queue:
+${JSON.stringify(patients, null, 2)}
+`;
 
-  const prompt = `
-    You are an AI Lab Quality Manager.
-    Metrics: ${JSON.stringify(labMetrics)}
-    
-    Return JSON:
-    1. tatScore: 0-100 (Turnaround Time efficiency).
-    2. efficiencyTrend: "Improving", "Declining", or "Stable".
-    3. calibrationAlert: Identify equipment needing attention.
-    4. staffingAdvice: Suggestion for the shift manager.
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
+  const schema: JsonSchema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
-      tatScore: { type: Type.NUMBER },
-      efficiencyTrend: { type: Type.STRING },
-      calibrationAlert: { type: Type.STRING },
-      staffingAdvice: { type: Type.STRING }
-    }
+      efficiencyScore: { type: "number" },
+      criticalAlerts: { type: "array", items: { type: "string" } },
+      reorderingSuggestions: { type: "array", items: { type: "string" } },
+      resourceAdvice: { type: "string" },
+    },
+    required: ["efficiencyScore", "criticalAlerts", "reorderingSuggestions", "resourceAdvice"],
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as LabQualityAnalysis;
-  } catch (e) {
-    return { tatScore: 88, efficiencyTrend: 'Stable', calibrationAlert: "None", staffingAdvice: "Routine operations." };
-  }
-};
-
-// --- 108 Ambulance AI ---
-
-export const getDispatchAdvice = async (incident: any, ambulances: any[]): Promise<DispatchPlan> => {
-  if (!isAiAvailable()) return { recommendedAmbulanceId: "", estimatedEta: "Unknown", routeSummary: "Manual Dispatch Req" };
-
-  const prompt = `
-    You are the AI Dispatch Controller for the 108 Ambulance Service.
-    Incident: ${JSON.stringify(incident)}
-    Available Ambulances: ${JSON.stringify(ambulances)}
-    
-    Decide which ambulance to dispatch based on proximity (lat/lng) and capability (ALS/BLS).
-    
-    Return JSON:
-    1. recommendedAmbulanceId: ID of the best vehicle.
-    2. estimatedEta: e.g. "12 mins".
-    3. routeSummary: e.g. "Take NH-16 Northbound".
-  `;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      recommendedAmbulanceId: { type: Type.STRING },
-      estimatedEta: { type: Type.STRING },
-      routeSummary: { type: Type.STRING }
-    }
+  const fallback: QueueAnalysis = {
+    efficiencyScore: 70,
+    criticalAlerts: [],
+    reorderingSuggestions: [],
+    resourceAdvice: "AI unavailable. Follow standard triage protocol.",
   };
 
-  try {
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '{}') as DispatchPlan;
-  } catch (e) {
-    return { recommendedAmbulanceId: ambulances[0]?.id || '', estimatedEta: "15 mins", routeSummary: "Calculated by backup GPS." };
-  }
-};
+  const out = await generateJson<QueueAnalysis>(prompt, schema, undefined, fallback);
 
-// --- Radiology AI ---
+  return {
+    efficiencyScore: Number(out?.efficiencyScore ?? fallback.efficiencyScore),
+    criticalAlerts: out?.criticalAlerts ?? [],
+    reorderingSuggestions: out?.reorderingSuggestions ?? [],
+    resourceAdvice: out?.resourceAdvice ?? fallback.resourceAdvice,
+  };
+}
 
-export const analyzeRadiologyImage = async (imageUrl: string): Promise<AIAnnotation[]> => {
-  if (!isAiAvailable()) return [];
-
-  // Note: In a real scenario, we would send the image bytes. 
-  // For this simulation, we rely on the prompt context to "simulate" finding an issue on a generic X-ray description.
-  
+// --- Dispatch Advice ---
+export async function getDispatchAdvice(incident: any, ambulances: any[]): Promise<DispatchPlan> {
   const prompt = `
-    Simulate a Computer Vision analysis of a Chest X-Ray.
-    Detect detection of "Consolidation" or "Nodule".
-    
-    Return JSON array of bounding boxes:
-    [{ id, label, confidence, x, y, width, height, description }]
-    
-    (Coordinate system: 0-100 percentage)
-  `;
+You are the AI Dispatch Controller.
+Recommend best ambulance + ETA.
 
-  const schema: Schema = {
-    type: Type.ARRAY,
+Return ONLY JSON with keys matching DispatchPlan.
+
+Input:
+${JSON.stringify({ incident, ambulances }, null, 2)}
+`;
+  const fallback = {
+    recommendedAmbulanceId: ambulances?.[0]?.id ?? "",
+    estimatedEta: "Unknown",
+    routeSummary: "AI unavailable. Use manual dispatch process.",
+  } as any;
+
+  return await generateJson<DispatchPlan>(prompt, undefined, undefined, fallback);
+}
+
+// --- Radiology (simulated annotations) ---
+export async function analyzeRadiologyImage(_imageUrl: string): Promise<AIAnnotation[]> {
+  const prompt = `
+Simulate radiology annotations.
+Return ONLY JSON array of:
+[{ "id": string, "label": string, "confidence": number, "x": number, "y": number, "width": number, "height": number, "description": string }]
+Coordinates are 0-100.
+`;
+
+  const schema: JsonSchema = {
+    type: "array",
     items: {
-      type: Type.OBJECT,
+      type: "object",
+      additionalProperties: false,
       properties: {
-        id: { type: Type.STRING },
-        label: { type: Type.STRING },
-        confidence: { type: Type.NUMBER },
-        x: { type: Type.NUMBER },
-        y: { type: Type.NUMBER },
-        width: { type: Type.NUMBER },
-        height: { type: Type.NUMBER },
-        description: { type: Type.STRING }
-      }
-    }
+        id: { type: "string" },
+        label: { type: "string" },
+        confidence: { type: "number" },
+        x: { type: "number" },
+        y: { type: "number" },
+        width: { type: "number" },
+        height: { type: "number" },
+        description: { type: "string" },
+      },
+      required: ["id", "label", "confidence", "x", "y", "width", "height", "description"],
+    },
   };
 
-  try {
-    // In a real app, we'd pass the image here.
-    const response = await ai!.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
-    return JSON.parse(response.text || '[]') as AIAnnotation[];
-  } catch (e) {
-    return [];
-  }
-};
+  const fallback: AIAnnotation[] = [];
+
+  const out = await generateJson<AIAnnotation[]>(prompt, schema, undefined, fallback);
+  return Array.isArray(out) ? out : [];
+}
