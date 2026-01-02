@@ -20,8 +20,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setLoading(true);
 
     // Access credentials from environment variables
-    const validUser = import.meta.env.VITE_USER_LOGIN;
-    const validPass = import.meta.env.VITE_USER_PASSWORD;
+    const validUser = import.meta.env.USER_LOGIN;
+    const validPass = import.meta.env.USER_PASSWORD;
 
     // Simulate Network Request
     setTimeout(() => {
