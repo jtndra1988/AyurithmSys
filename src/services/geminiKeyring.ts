@@ -2,13 +2,13 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const GEMINI_MODEL =
-  (import.meta.env.VITE_GEMINI_MODEL as string) || "gemini-2.5-flash-lite";
+  (import.meta.env.GEMINI_MODEL as string) || "gemini-2.5-flash-lite";
 
-const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
+const GEMINI_API_KEY = (import.meta.env.GEMINI_API_KEY as string) || "";
 
 export function assertGeminiConfigured() {
   if (!GEMINI_API_KEY || GEMINI_API_KEY.trim().length < 10) {
-    throw new Error("Missing Gemini API key (VITE_GEMINI_API_KEY).");
+    throw new Error("Missing Gemini API key (GEMINI_API_KEY).");
   }
 }
 
