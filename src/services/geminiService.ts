@@ -1,4 +1,4 @@
-import { withGemini, GEMINI_MODEL } from "./geminiKeyring";
+import { withGemini, GEMINI_AI_MODEL } from "./geminiKeyring";
 
 // Import your app types (keep as-is if you already had these)
 import type {
@@ -68,13 +68,13 @@ function safeJsonParse<T>(raw: string, fallback: T): T {
 }
 
 async function generateText(prompt: string, systemInstruction?: string): Promise<string> {
-  const requestKey = `text:${GEMINI_MODEL}:${systemInstruction ? "sys" : "nosys"}:${prompt.slice(0, 600)}`;
+  const requestKey = `text:${GEMINI_AI_MODEL}:${systemInstruction ? "sys" : "nosys"}:${prompt.slice(0, 600)}`;
 
   const res = await withGemini(
     requestKey,
     (client) =>
       client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_AI_MODEL,
         contents: prompt,
         config: systemInstruction ? ({ systemInstruction } as any) : undefined,
       } as any),
@@ -91,7 +91,7 @@ async function generateJson<T>(
   systemInstruction?: string,
   fallback?: T
 ): Promise<T> {
-  const requestKey = `json:${GEMINI_MODEL}:${systemInstruction ? "sys" : "nosys"}:${
+  const requestKey = `json:${GEMINI_AI_MODEL}:${systemInstruction ? "sys" : "nosys"}:${
     schema ? "schema" : "noschema"
   }:${prompt.slice(0, 600)}`;
 
@@ -99,7 +99,7 @@ async function generateJson<T>(
     requestKey,
     (client) =>
       client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_AI_MODEL,
         contents: prompt,
         config: {
           ...(systemInstruction ? { systemInstruction } : {}),

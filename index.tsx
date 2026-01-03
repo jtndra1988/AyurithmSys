@@ -35,7 +35,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
             {this.state.error?.toString()}
           </pre>
           <p style={{ marginTop: '1rem', fontSize: '0.9rem', color: '#64748b' }}>
-            If you are running this locally, please ensure you have set up the environment variables (API_KEY) correctly or check the console for more details.
+            If you are running this locally, please ensure you have set up the environment variables (GEMINI_API_KEY) correctly or check the console for more details.
           </p>
           <button 
             onClick={() => window.location.reload()} 
