@@ -1,15 +1,17 @@
 // src/services/geminiKeyring.ts
 import { GoogleGenAI } from "@google/genai";
 
-// Updated to use VITE_ prefix
+// 1. ADD VITE_ HERE
 export const GEMINI_AI_MODEL =
   (import.meta.env.VITE_GEMINI_AI_MODEL as string) || "gemini-2.5-flash-lite";
 
-// Updated to use VITE_ prefix
+// 2. ADD VITE_ HERE
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
 
 export function assertGeminiConfigured() {
+  // 3. CHECK FOR THE KEY CORRECTLY
   if (!GEMINI_API_KEY || GEMINI_API_KEY.trim().length < 10) {
+    // 4. Update error message to match
     throw new Error("Missing Gemini API key (VITE_GEMINI_API_KEY).");
   }
 }
@@ -36,10 +38,8 @@ function isRetryable(err: any): boolean {
   );
 }
 
-// In-flight dedupe (only works when you pass a stable key)
 const inflight = new Map<string, Promise<any>>();
 
-// Overload signatures
 export async function withGemini<T>(
   fn: (client: GoogleGenAI) => Promise<T>,
   opts?: { maxAttempts?: number }
@@ -50,7 +50,6 @@ export async function withGemini<T>(
   opts?: { maxAttempts?: number }
 ): Promise<T>;
 
-// Implementation
 export async function withGemini<T>(a: any, b?: any, c?: any): Promise<T> {
   assertGeminiConfigured();
 
@@ -59,23 +58,19 @@ export async function withGemini<T>(a: any, b?: any, c?: any): Promise<T> {
   let opts: { maxAttempts?: number } | undefined;
 
   if (typeof a === "function") {
-    // withGemini(fn, opts)
     fn = a;
     opts = b;
-    // No stable key provided => no dedupe (still works)
     key = `__nostable__:${Date.now()}:${Math.random()}`;
   } else {
-    // withGemini(key, fn, opts)
     key = String(a ?? "");
     fn = b;
     opts = c;
   }
 
   if (typeof fn !== "function") {
-    throw new TypeError("withGemini: fn is not a function. Use withGemini(key, fn) or withGemini(fn).");
+    throw new TypeError("withGemini: fn is not a function.");
   }
 
-  // Dedup only when caller provides stable key
   const canDedup = !key.startsWith("__nostable__");
   if (canDedup) {
     const existing = inflight.get(key);
